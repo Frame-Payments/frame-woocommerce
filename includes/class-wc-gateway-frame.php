@@ -7,10 +7,12 @@ use Frame\Endpoints\Refunds;
 use Frame\Exception as FrameException;
 use Frame\Models\ChargeIntents\ChargeIntentCreateRequest;
 use Frame\Models\ChargeIntents\ChargeIntentCustomerData;
+use Frame\Models\ChargeIntents\ChargeIntentStatus;
 use Frame\Models\Customers\Address;
 use Frame\Models\PaymentMethods\PaymentMethodData;
 use Frame\Models\PaymentMethods\PaymentMethodType;
 use Frame\Models\Refunds\RefundCreateRequest;
+use Frame\Models\Refunds\RefundReason;
 
 class WC_Gateway_Frame extends WC_Payment_Gateway {
 
@@ -386,15 +388,21 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         if (!$intentId) return;
 
         try {
-            wc_get_logger()->info('[Frame WC] handle_return start order=' . $order_id . ' intent=' . $intentId, ['source'=>'frame-payments-for-woocommerce']);
-
+            // Get latest status from Frame
             $intent = (new \Frame\Endpoints\ChargeIntents())->retrieve($intentId);
-            $arr = method_exists($intent, 'toArray') ? $intent->toArray() : ['status' => $intent->status ?? null];
-            $status = $this->frame_status_to_string( $arr['status'] ?? null );
-            $order->update_meta_data('_frame_last_status', $status);
-            $order->save();
 
-            wc_get_logger()->info('[Frame WC] handle_return status=' . (string)$status, ['source'=>'frame-payments-for-woocommerce']);
+            // Safely extract status without calling toArray()
+            $rawStatus = $intent->status ?? null;
+            if ($rawStatus instanceof ChargeIntentStatus) {
+                $status = $rawStatus->value; // SDK enum -> string
+            } else {
+                $status = is_string($rawStatus) ? $rawStatus : '';
+            }
+
+            // Record last seen status for admin UI/actions
+            if ($status !== '') {
+                $order->update_meta_data('_frame_last_status', $status);
+            }
 
             switch ($status) {
                 case 'succeeded':
@@ -414,10 +422,15 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                     break;
 
                 default:
+                    // still pending / incomplete / unknown -> keep on-hold
                     $order->update_status('on-hold', __('Frame: awaiting confirmation.', 'frame-wc'));
             }
+
+            $order->save();
+
         } catch (\Throwable $e) {
-            wc_get_logger()->error('[Frame WC] handle_return error: ' . $e->getMessage(), ['source'=>'frame-payments-for-woocommerce']);
+            wc_get_logger()->error('[Frame WC] handle_return error: ' . $e->getMessage(), ['source' => 'frame-payments-for-woocommerce']);
+            // leave order as-is
         }
     }
 
@@ -455,11 +468,24 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
 
         $minor = (int) round( $refund_total * 100 );
 
+        $refundReason = RefundReason::REQUESTED;
+
+        if ($reason) {
+            $normalized = strtolower($reason);
+            if (str_contains($normalized, 'duplicate')) {
+                $refundReason = RefundReason::DUPLICATE;
+            } elseif (str_contains($normalized, 'fraudulent')) {
+                $refundReason = RefundReason::FRAUDULENT;
+            } elseif (str_contains($normalized, 'expired_uncaptured_charge')) {
+                $refundReason = RefundReason::EXPIRED;
+            }
+        }
+
         // Build request (adjust field names if your SDK differs)
         $req = new RefundCreateRequest(
-            chargeIntentId: $intent_id,        // ← key field: which payment to refund
-            amount:         $minor,            // partial or full (minor units)
-            reason:         $reason ?: null,   // optional
+            chargeIntent: $intent_id,        // ← key field: which payment to refund
+            amount: $minor,            // partial or full (minor units)
+            reason: $refundReason,
         );
 
         try {
