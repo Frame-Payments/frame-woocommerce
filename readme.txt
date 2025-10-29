@@ -1,5 +1,4 @@
-# Frame Payments: Woocommerce Integration
-
+=== Frame for WooCommerce ===
 Contributors: framepayments
 Tags: payments, credit card, checkout, gateway, frame, fintech
 Requires at least: 6.3

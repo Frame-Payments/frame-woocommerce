@@ -138,6 +138,11 @@ add_action('woocommerce_api_frame_webhook', function () {
     $status = $intent['status'] ?? '';
     $meta   = $intent['metadata'] ?? [];
 
+    $logger?->info(
+        sprintf('[Frame WC] Webhook received: type=%s id=%s status=%s', (string)$type, (string)$cid, (string)$status),
+        ['source' => 'frame-payments-for-woocommerce']
+    );
+
     // Detect refund-related webhooks
     if (isset($data['type']) && str_starts_with($data['type'], 'refund.')) {
         $refundId   = $intent['id'] ?? null;

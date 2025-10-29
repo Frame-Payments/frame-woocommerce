@@ -166,7 +166,8 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
 
         try {
             $res = (new \Frame\Endpoints\ChargeIntents())->capture($intentId);
-            $status = method_exists($res, 'toArray') ? ($res->toArray()['status'] ?? null) : ($res->status ?? null);
+            $statusRaw = method_exists($res, 'toArray') ? ($res->toArray()['status'] ?? null) : ($res->status ?? null);
+            $status = $this->frame_status_to_string( $statusRaw );
 
             $order->update_meta_data('_frame_last_status', $status);
             if (in_array($status, ['captured','succeeded'], true)) {
@@ -192,7 +193,8 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
 
         try {
             $res = (new \Frame\Endpoints\ChargeIntents())->cancel($intentId);
-            $status = method_exists($res, 'toArray') ? ($res->toArray()['status'] ?? null) : ($res->status ?? null);
+            $statusRaw = method_exists($res, 'toArray') ? ($res->toArray()['status'] ?? null) : ($res->status ?? null);
+            $status = $this->frame_status_to_string( $statusRaw );
 
             $order->update_meta_data('_frame_last_status', $status);
             if (in_array($status, ['canceled','cancelled'], true)) {
@@ -384,11 +386,17 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         if (!$intentId) return;
 
         try {
-            // Get latest status from Frame
+            wc_get_logger()->info('[Frame WC] handle_return start order=' . $order_id . ' intent=' . $intentId, ['source'=>'frame-payments-for-woocommerce']);
+
             $intent = (new \Frame\Endpoints\ChargeIntents())->retrieve($intentId);
             $arr = method_exists($intent, 'toArray') ? $intent->toArray() : ['status' => $intent->status ?? null];
+            $status = $this->frame_status_to_string( $arr['status'] ?? null );
+            $order->update_meta_data('_frame_last_status', $status);
+            $order->save();
 
-            switch ($arr['status'] ?? null) {
+            wc_get_logger()->info('[Frame WC] handle_return status=' . (string)$status, ['source'=>'frame-payments-for-woocommerce']);
+
+            switch ($status) {
                 case 'succeeded':
                 case 'captured':
                     $order->payment_complete($intentId);
@@ -399,22 +407,17 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 case 'authorized':
                     $order->update_status('processing', __('Frame: authorized, pending capture.', 'frame-wc'));
                     break;
-                case 'refunded':
-                case 'reversed':
-                    $order->update_status('refunded', __('Frame: payment refunded.', 'frame-wc'));
-                    break;
+
                 case 'canceled':
                 case 'failed':
                     $order->update_status('failed', __('Frame: payment failed/canceled.', 'frame-wc'));
                     break;
 
                 default:
-                    // still pending/requires_action
                     $order->update_status('on-hold', __('Frame: awaiting confirmation.', 'frame-wc'));
             }
         } catch (\Throwable $e) {
-            wc_get_logger()->error('[Frame WC] handle_return error: ' . $e->getMessage());
-            // leave order as-is; customer already sees the thank-you page
+            wc_get_logger()->error('[Frame WC] handle_return error: ' . $e->getMessage(), ['source'=>'frame-payments-for-woocommerce']);
         }
     }
 
@@ -468,7 +471,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 'status' => $refund->status ?? null,
             ];
 
-            $status = $refundArr['status'] ?? 'refunded';
+            $status = $this->frame_status_to_string( $refundArr['status'] ?? 'refunded' );
 
             // Persist last known payment state so admin actions / UI stay in sync
             $order->update_meta_data( '_frame_last_status', $status );
@@ -517,5 +520,22 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         parent::admin_options();
         echo '<p><strong>' . esc_html__('Webhook URL:', 'frame-wc') . '</strong> ';
         echo '<code>' . esc_html($this->get_webhook_url()) . '</code></p>';
+    }
+
+    /**
+     * Normalize a PHP enum (BackedEnum/UnitEnum) or enum-like object to a string.
+     */
+    private function frame_status_to_string( $maybe ): string {
+        if ($maybe instanceof \BackedEnum) {
+            return (string) $maybe->value;
+        }
+        if ($maybe instanceof \UnitEnum) {
+            return (string) $maybe->name;
+        }
+        // Some SDKs expose ->value without being a native enum
+        if (is_object($maybe) && property_exists($maybe, 'value')) {
+            return (string) $maybe->value;
+        }
+        return is_string($maybe) ? $maybe : (string) $maybe;
     }
 }
