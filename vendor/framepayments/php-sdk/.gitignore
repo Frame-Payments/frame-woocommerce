@@ -1,0 +1,12 @@
+/vendor
+composer-setup.php
+composer.phar
+
+# Coverage reports
+coverage/
+coverage.xml
+.phpunit.cache
+
+# PHP CS Fixer
+.php-cs-fixer.cache
+*.phar

@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        php-version: ['8.2', '8.3']
+    
+    name: PHP ${{ matrix.php-version }} Tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ matrix.php-version }}
+        extensions: mbstring, xml, ctype, iconv, intl, pdo, pdo_mysql, dom, filter, gd, hash, json, mbstring, pcre, pdo, session, tokenizer, zip
+        tools: composer:v2
+        coverage: xdebug
+        
+    - name: Cache Composer packages
+      id: composer-cache
+      uses: actions/cache@v3
+      with:
+        path: vendor
+        key: ${{ runner.os }}-php-${{ matrix.php-version }}-${{ hashFiles('**/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-php-${{ matrix.php-version }}-
+          
+    - name: Install dependencies
+      run: |
+        composer update --no-progress --no-interaction --prefer-dist --optimize-autoloader
+        composer install --dev --no-progress --no-interaction --prefer-dist --optimize-autoloader
+        
+    - name: Run PHP CS Fixer
+      run: ./vendor/bin/php-cs-fixer fix --dry-run --diff --verbose
+      
+    - name: Run PHPUnit tests
+      run: ./vendor/bin/phpunit
+      continue-on-error: false
+      
+    - name: Run PHPUnit with coverage (PHP 8.3 only)
+      if: matrix.php-version == '8.3'
+      run: ./vendor/bin/phpunit --coverage-clover coverage.xml
+      continue-on-error: false
+      
+    - name: Upload coverage to Codecov (PHP 8.3 only)
+      if: matrix.php-version == '8.3'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  docker-test:
+    runs-on: ubuntu-latest
+    name: Docker Tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Build Docker image
+      run: docker build -t frame-php-test .
+      
+    - name: Run tests in Docker
+      run: docker run --rm frame-php-test
+      continue-on-error: false
