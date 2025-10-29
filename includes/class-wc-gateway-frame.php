@@ -22,7 +22,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         $this->id = 'frame';
         $this->method_title = __('Frame', 'frame-wc');
         $this->method_description = __('Accept payments via Frame.', 'frame-wc');
-        $this->icon = ''; // set later
+        $this->icon = FRAME_WC_URL . 'assets/img/frame-logo.png';
         $this->has_fields = true;
 
         $this->init_form_fields();
@@ -94,15 +94,12 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
     }
 
     public function register_order_actions( $actions ) {
-        // Only run in admin, and only when we can resolve an order
         if ( ! is_admin() ) {
             return $actions;
         }
 
-        // Try to resolve the order across classic editor / HPOS screens
         $order = null;
 
-        // A) Classic screen
         if ( function_exists( 'get_current_screen' ) ) {
             $screen = get_current_screen();
             if ( $screen && $screen->id !== 'shop_order' ) {
@@ -110,12 +107,10 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             }
         }
 
-        // B) From ?post=ID (classic)
         if ( empty( $order ) && ! empty( $_GET['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
             $order = wc_get_order( absint( $_GET['post'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         }
 
-        // C) Fallback to global
         if ( empty( $order ) && function_exists( 'get_the_ID' ) ) {
             $maybe_id = absint( get_the_ID() );
             if ( $maybe_id ) {
@@ -127,7 +122,6 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             return $actions;
         }
 
-        // Only for this gateway
         if ( $order->get_payment_method() !== $this->id ) {
             return $actions;
         }
@@ -139,18 +133,15 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             return $actions;
         }
 
-        // If we haven't recorded a last status yet, infer for UI:
         if ( ! $last_status && $order->has_status( 'on-hold' ) ) {
             $last_status = 'pending';
         }
 
-        // Capture / Void when the intent is not settled yet
         if ( in_array( $last_status, array( 'pending', 'incomplete' ), true ) ) {
             $actions['frame_capture'] = esc_html__( 'Capture with Frame', 'frame-wc' );
             $actions['frame_void']    = esc_html__( 'Void (cancel) with Frame', 'frame-wc' );
         }
 
-        // Optional: Refund when settled
         if ( 'succeeded' === $last_status && method_exists( $this, 'admin_refund' ) ) {
             $actions['frame_refund'] = esc_html__( 'Refund via Frame', 'frame-wc' );
         }
@@ -253,17 +244,13 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 'name'      => trim(($billing['first_name'] ?? '') . ' ' . ($billing['last_name'] ?? '')),
             ]), ['source' => 'frame-payments-for-woocommerce']);
 
-            // Read JSON posted by frame-wc.js (WP adds slashes to POST data)
             $raw_json = isset($_POST['frame_payment_method_data'])
                 ? wp_unslash($_POST['frame_payment_method_data'])
                 : '';
 
             $cardData = $raw_json ? json_decode($raw_json, true) : null;
-
-            // Debug once to confirm it’s parsed
             wc_get_logger()->info('[Frame WC] raw_json len=' . strlen((string)$raw_json) . ' parsed=' . (is_array($cardData) ? 'yes' : 'no'), ['source' => 'frame-payments-for-woocommerce']);
 
-            // Validate we actually have the fields from Frame.js
             if (
                 !is_array($cardData) ||
                 empty($cardData['number']) ||
@@ -279,7 +266,6 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 return ['result' => 'failure'];
             }
 
-            // Normalize types (SDK constructor expects strings)
             $cardNumber = (string) $cardData['number'];
             $expMonth   = (string) $cardData['exp_month'];
             $expYear    = (string) $cardData['exp_year'];
@@ -322,7 +308,6 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 authorizationMode: null
             );
 
-            // Create the intent
             try {
                 $intent = (new ChargeIntents())->create($req);
             } catch (FrameException $e) {
@@ -336,7 +321,6 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 return ['result' => 'failure'];
             }
 
-            // Convert to array if available (rest of your function can stay as-is)
             $intentArr = method_exists($intent, 'toArray') ? $intent->toArray() : [
                 'id'           => $intent->id ?? null,
                 'status'       => $intent->status ?? null,
@@ -346,7 +330,6 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
 
             wc_get_logger()->info('[Frame WC] create response: ' . wp_json_encode($intentArr), ['source' => 'frame-payments-for-woocommerce']);
 
-            // Persist Frame intent id on the order
             if (!empty($intentArr['id'])) {
                 $order->set_transaction_id($intentArr['id']);
                 $order->update_meta_data('_frame_intent_id', $intentArr['id']);
@@ -354,15 +337,12 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 $order->save();
             }
 
-            // Decide where to send the customer
             $redirect = $intentArr['hosted_url']
                 ?? $intentArr['redirect_url']
                 ?? $this->get_return_url($order);
 
-            // Put order on-hold while waiting for confirmation from Frame
             $order->update_status('on-hold', __('Awaiting Frame payment confirmation.', 'frame-wc'));
 
-            // Empty the cart and return success
             if (function_exists('WC') && WC()->cart) {
                 WC()->cart->empty_cart();
             }
@@ -388,18 +368,15 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         if (!$intentId) return;
 
         try {
-            // Get latest status from Frame
             $intent = (new \Frame\Endpoints\ChargeIntents())->retrieve($intentId);
 
-            // Safely extract status without calling toArray()
             $rawStatus = $intent->status ?? null;
             if ($rawStatus instanceof ChargeIntentStatus) {
-                $status = $rawStatus->value; // SDK enum -> string
+                $status = $rawStatus->value;
             } else {
                 $status = is_string($rawStatus) ? $rawStatus : '';
             }
 
-            // Record last seen status for admin UI/actions
             if ($status !== '') {
                 $order->update_meta_data('_frame_last_status', $status);
             }
