@@ -1,18 +1,18 @@
 (function ($) {
   async function boot() {
-    // Wait for Frame.js
+    // Wait for Frame.js to load
     if (typeof window.Frame === 'undefined') {
       setTimeout(boot, 50);
       return;
     }
 
-    // Get publishable key from PHP
     const cfg = document.querySelector('#frame-js-config');
     if (!cfg) return;
+
     const pk = cfg.getAttribute('data-pk');
     if (!pk) return;
 
-    // Avoid duplicate inits/mounts across checkout refreshes
+    // Prevent double-initialization (checkout reloads trigger multiple times)
     if (window.__frame_wc_inited) return;
     window.__frame_wc_inited = true;
 
@@ -29,51 +29,58 @@
     card.mount('#frame-card-fields');
     mountEl.dataset.mounted = '1';
 
+    // Listen for card completion
     card.on('complete', (payload) => {
-        console.log('[Frame WC] card complete:', payload);
+      console.log('[Frame WC] card complete:', payload);
 
-        // Extract encrypted card fields directly from Frame.js payload
-        const card = payload?.card || {};
-        const cardData = {
-            number: card.number,
-            exp_month: card.expiry?.month,
-            exp_year: card.expiry?.year,
-            cvc: card.cvc
-        };
+      const card = payload?.card || {};
+      const cardData = {
+        number: card.number,
+        exp_month: card.expiry?.month,
+        exp_year: card.expiry?.year,
+        cvc: card.cvc,
+      };
 
-        // Store as JSON so WooCommerce sends it to your PHP plugin
-        const json = JSON.stringify(cardData);
-        // Ensure the hidden input exists (Blocks/refresh can remove it)
-        let hidden = document.getElementById('frame_payment_method_data')
-                || document.querySelector('input[name="frame_payment_method_data"]');
-        if (!hidden) {
-            hidden = document.createElement('input');
-            hidden.type = 'hidden';
-            hidden.id = 'frame_payment_method_data';
-            hidden.name = 'frame_payment_method_data';
-            (document.querySelector('form.checkout') || document.body).appendChild(hidden);
-        }
+      const json = JSON.stringify(cardData);
 
-        // Store as JSON so PHP can read it
-        hidden.value = JSON.stringify(cardData);
-        console.log('[Frame WC] wrote hidden JSON:', hidden.value);
-        console.log('[Frame WC] card data set for charge intent:', cardData);
+      // Always ensure hidden input exists
+      let hidden =
+        document.getElementById('frame_payment_method_data') ||
+        document.querySelector('input[name="frame_payment_method_data"]');
+      if (!hidden) {
+        hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.id = 'frame_payment_method_data';
+        hidden.name = 'frame_payment_method_data';
+        (document.querySelector('form.checkout') || document.body).appendChild(hidden);
+      }
+
+      hidden.value = json;
+      console.log('[Frame WC] wrote hidden JSON:', hidden.value);
     });
 
-    // Hook WooCommerce submit for our gateway (id = 'frame')
+    // When checkout updates (AJAX refresh), clear stale card data
+    $(document.body).on('updated_checkout', () => {
+      const hidden = document.getElementById('frame_payment_method_data');
+      if (hidden) hidden.value = '';
+    });
+
+    // Bind WooCommerce form submission for this gateway
     const $form = $('form.checkout');
     if ($form.length && !$form.data('frame-bound')) {
       $form.data('frame-bound', true);
 
       $form.on('checkout_place_order_frame', function () {
         console.log('[Frame WC] submit hook fired');
-        const id = $('#frame_payment_method_data').val();
-        if (!id) {
-            window.wc_checkout_form?.submit_error?.(
+
+        const val = $('#frame_payment_method_data').val();
+        if (!val || val === '{}') {
+          window.wc_checkout_form?.submit_error?.(
             '<div class="woocommerce-error">Please complete your card details.</div>'
-            );
-            return false;
+          );
+          return false;
         }
+
         return true;
       });
     }

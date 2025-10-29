@@ -1,13 +1,19 @@
 <?php
 /**
- * Plugin Name: Frame Payments for WooCommerce
- * Description: Use Frame as a payment gateway in WooCommerce.
- * Version: 0.1.0
- * Author: Frame Payments
- * Requires at least: 6.0
- * Requires PHP: 8.3
+ * Plugin Name: Frame for WooCommerce
+ * Plugin URI:  https://framepayments.com/
+ * Description: Accept payments through Frame — secure, modern payment infrastructure for WooCommerce.
+ * Version:     1.0.0
+ * Author:      Frame
+ * Author URI:  https://framepayments.com/
+ * License:     GPL-3.0-or-later
+ * License URI: https://www.gnu.org/licenses/gpl-3.0.html
+ * Text Domain: frame-wc
+ * Domain Path: /languages
+ * Requires PHP: 8.2
+ * Requires at least: 6.3
  * WC requires at least: 8.0
- * WC tested up to: 9.1
+ * WC tested up to: 9.0
  */
 
 if (!defined('ABSPATH')) { exit; } // no direct access
@@ -15,7 +21,7 @@ if (!defined('ABSPATH')) { exit; } // no direct access
 /** -------------------------------------------------------
  * Core constants (define at top level, not inside a hook)
  * ------------------------------------------------------ */
-define('FRAME_WC_VERSION', '0.1.0');
+define('FRAME_WC_VERSION', '1.0.0');
 define('FRAME_WC_FILE', __FILE__);
 define('FRAME_WC_DIR', plugin_dir_path(__FILE__));
 define('FRAME_WC_URL', plugin_dir_url(__FILE__));
@@ -132,6 +138,46 @@ add_action('woocommerce_api_frame_webhook', function () {
     $status = $intent['status'] ?? '';
     $meta   = $intent['metadata'] ?? [];
 
+    // Detect refund-related webhooks
+    if (isset($data['type']) && str_starts_with($data['type'], 'refund.')) {
+        $refundId   = $intent['id'] ?? null;
+        $parentCid  = $intent['charge_intent_id'] ?? ($intent['chargeIntentId'] ?? null);
+        $refundStat = $intent['status'] ?? 'refunded';
+
+        // Try to locate order by refund's metadata or parent charge intent
+        $order_id = isset($meta['wc_order_id']) ? (int) $meta['wc_order_id'] : 0;
+        if (!$order_id && $parentCid) {
+            $found = wc_get_orders([
+                'limit'      => 1,
+                'meta_key'   => '_frame_intent_id',
+                'meta_value' => $parentCid,
+                'return'     => 'ids',
+            ]);
+            if (!empty($found)) {
+                $order_id = (int)$found[0];
+            }
+        }
+
+        if ($order_id) {
+            $order = wc_get_order($order_id);
+            if ($order) {
+                $order->update_meta_data('_frame_last_status', $refundStat);
+                $order->add_order_note(
+                    sprintf(
+                        __('Frame: refund %s (status: %s).', 'frame-wc'),
+                        esc_html($refundId ?? ''),
+                        esc_html($refundStat)
+                    )
+                );
+                $order->update_status('refunded', __('Frame: refund confirmed via webhook.', 'frame-wc'));
+                $order->save();
+            }
+        }
+
+        status_header(200);
+        exit;
+    }
+
     // Find the Woo order
     $order_id = isset($meta['wc_order_id']) ? (int)$meta['wc_order_id'] : 0;
     if (!$order_id && $cid) {
@@ -150,6 +196,19 @@ add_action('woocommerce_api_frame_webhook', function () {
 
     $order = wc_get_order($order_id);
     if (!$order) { status_header(200); exit; }
+
+    // If the event doesn't include a status (some informational events), acknowledge and exit.
+    if ($status === '' || $status === null) {
+        $logger?->info('[Frame WC] Webhook: no status in payload; acknowledged', ['source' => 'frame-payments-for-woocommerce']);
+        status_header(200); exit;
+    }
+
+    // Ensure the order stores the Frame transaction id (helps admin UI & later ops)
+    if ($cid && ! $order->get_transaction_id()) {
+        $order->set_transaction_id($cid);
+        $order->update_meta_data('_frame_intent_id', $cid);
+        $order->save();
+    }
 
     // Idempotency: don’t repeat work
     $last = $order->get_meta('_frame_last_status');

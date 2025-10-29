@@ -3,23 +3,25 @@ if (!defined('ABSPATH')) { exit; }
 
 use Frame\Auth;
 use Frame\Endpoints\ChargeIntents;
+use Frame\Endpoints\Refunds;
 use Frame\Exception as FrameException;
 use Frame\Models\ChargeIntents\ChargeIntentCreateRequest;
 use Frame\Models\ChargeIntents\ChargeIntentCustomerData;
 use Frame\Models\Customers\Address;
 use Frame\Models\PaymentMethods\PaymentMethodData;
 use Frame\Models\PaymentMethods\PaymentMethodType;
+use Frame\Models\Refunds\RefundCreateRequest;
 
 class WC_Gateway_Frame extends WC_Payment_Gateway {
 
     protected $client;
 
     public function __construct() {
-        $this->id                 = 'frame';
-        $this->method_title       = __('Frame', 'frame-wc');
+        $this->id = 'frame';
+        $this->method_title = __('Frame', 'frame-wc');
         $this->method_description = __('Accept payments via Frame.', 'frame-wc');
-        $this->icon               = ''; // set later
-        $this->has_fields         = true;
+        $this->icon = ''; // set later
+        $this->has_fields = true;
 
         $this->init_form_fields();
         $this->init_settings();
@@ -28,6 +30,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         $this->title      = $this->get_option('title');
         $this->public_key = $this->get_option('public_key');
         $this->secret_key = $this->get_option('secret_key');
+
         $this->supports = ['products', 'refunds'];
         $this->webhook_secret = $this->get_option('webhook_secret');
 
@@ -35,12 +38,13 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             Auth::setApiKey($this->secret_key);
         }
 
-        add_filter( 'woocommerce_order_actions', [ $this, 'register_order_actions' ], 20, 1 );
-        add_action( 'woocommerce_order_action_frame_capture', [ $this, 'admin_capture' ] );
-        add_action( 'woocommerce_order_action_frame_void',    [ $this, 'admin_void' ] );
-        add_action( 'woocommerce_order_action_frame_refund',  [ $this, 'admin_refund' ] );
         add_action('woocommerce_update_options_payment_gateways_' . $this->id, [$this, 'process_admin_options']);
         add_action('woocommerce_thankyou_' . $this->id, [$this, 'handle_return'], 10, 1);
+
+        add_filter('woocommerce_order_actions', [ $this, 'register_order_actions' ], 20, 1 );
+        add_action('woocommerce_order_action_frame_capture', [ $this, 'admin_capture' ] );
+        add_action('woocommerce_order_action_frame_void',    [ $this, 'admin_void' ] );
+        add_action('woocommerce_order_action_frame_refund',  [ $this, 'admin_refund' ] );
     }
 
     public function init_form_fields() {
@@ -202,6 +206,23 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         }
     }
 
+    public function admin_refund( $order ) {
+        if ( ! $order instanceof WC_Order ) {
+            return;
+        }
+        $amount = (float) $order->get_remaining_refund_amount();
+        if ( $amount <= 0 ) {
+            $order->add_order_note( __( 'Frame: no refundable amount left.', 'frame-wc' ) );
+            return;
+        }
+        $res = $this->process_refund( $order->get_id(), $amount, __( 'Admin order action', 'frame-wc' ) );
+        if ( is_wp_error( $res ) ) {
+            $order->add_order_note( sprintf( __( 'Frame: refund failed — %s', 'frame-wc' ), $res->get_error_message() ) );
+        } else {
+            $order->add_order_note( __( 'Frame: refund requested via Order action.', 'frame-wc' ) );
+        }
+    }
+
     public function process_payment($order_id) {
         $order = wc_get_order($order_id);
 
@@ -325,6 +346,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             if (!empty($intentArr['id'])) {
                 $order->set_transaction_id($intentArr['id']);
                 $order->update_meta_data('_frame_intent_id', $intentArr['id']);
+                $order->update_meta_data('_frame_last_status', $intentArr['status'] ?? 'pending');
                 $order->save();
             }
 
@@ -377,7 +399,10 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 case 'authorized':
                     $order->update_status('processing', __('Frame: authorized, pending capture.', 'frame-wc'));
                     break;
-
+                case 'refunded':
+                case 'reversed':
+                    $order->update_status('refunded', __('Frame: payment refunded.', 'frame-wc'));
+                    break;
                 case 'canceled':
                 case 'failed':
                     $order->update_status('failed', __('Frame: payment failed/canceled.', 'frame-wc'));
@@ -390,6 +415,82 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         } catch (\Throwable $e) {
             wc_get_logger()->error('[Frame WC] handle_return error: ' . $e->getMessage());
             // leave order as-is; customer already sees the thank-you page
+        }
+    }
+
+    /**
+     * Process a refund via Frame when initiated from WooCommerce admin.
+     *
+     * @param int        $order_id WC order ID.
+     * @param float|null $amount   Refund amount (store currency). If null, treat as full amount.
+     * @param string     $reason   Reason shown in order notes / sent to Frame when supported.
+     * @return bool|WP_Error
+     */
+    public function process_refund( $order_id, $amount = null, $reason = '' ) {
+        $order = wc_get_order( $order_id );
+        if ( ! $order ) {
+            return new WP_Error( 'frame_refund_no_order', __( 'Frame: Order not found.', 'frame-wc' ) );
+        }
+
+        // Only handle our payments.
+        if ( $order->get_payment_method() !== $this->id ) {
+            return new WP_Error( 'frame_refund_wrong_gateway', __( 'Frame: Not a Frame payment.', 'frame-wc' ) );
+        }
+
+        $intent_id = $order->get_meta( '_frame_intent_id' );
+        if ( ! $intent_id ) {
+            return new WP_Error( 'frame_refund_no_intent', __( 'Frame: Missing payment reference.', 'frame-wc' ) );
+        }
+
+        // Amount in minor units (e.g., cents). If $amount is null, refund full order remaining amount.
+        $currency     = strtoupper( $order->get_currency() );
+        $refund_total = is_null( $amount ) ? (float) $order->get_remaining_refund_amount() : (float) $amount;
+
+        if ( $refund_total <= 0 ) {
+            return new WP_Error( 'frame_refund_zero', __( 'Frame: Nothing to refund.', 'frame-wc' ) );
+        }
+
+        $minor = (int) round( $refund_total * 100 );
+
+        // Build request (adjust field names if your SDK differs)
+        $req = new RefundCreateRequest(
+            chargeIntentId: $intent_id,        // ← key field: which payment to refund
+            amount:         $minor,            // partial or full (minor units)
+            reason:         $reason ?: null,   // optional
+        );
+
+        try {
+            $refund = ( new Refunds() )->create( $req );
+
+            // Pull a status out of the model. If your SDK has ->toArray(), use it.
+            $refundArr = method_exists( $refund, 'toArray' ) ? $refund->toArray() : [
+                'id'     => $refund->id     ?? null,
+                'status' => $refund->status ?? null,
+            ];
+
+            $status = $refundArr['status'] ?? 'refunded';
+
+            // Persist last known payment state so admin actions / UI stay in sync
+            $order->update_meta_data( '_frame_last_status', $status );
+            $order->add_order_note(
+                sprintf(
+                    /* translators: 1: amount, 2: currency, 3: status */
+                    __( 'Frame: refund requested: %1$s %2$s (status: %3$s).', 'frame-wc' ),
+                    wc_price( $refund_total, [ 'currency' => $currency ] ),
+                    $currency,
+                    esc_html( $status )
+                )
+                . ( $reason ? ' — ' . sprintf( __( 'Reason: %s', 'frame-wc' ), esc_html( $reason ) ) : '' )
+            );
+            $order->save();
+            return true;
+
+        } catch ( \Throwable $e ) {
+            // Show the error to the admin
+            return new WP_Error(
+                'frame_refund_failed',
+                sprintf( __( 'Frame refund failed: %s', 'frame-wc' ), $e->getMessage() )
+            );
         }
     }
 
