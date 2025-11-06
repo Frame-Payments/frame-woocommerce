@@ -1,0 +1,7 @@
+.payment_method_frame img {
+  width: 32px;
+  height: auto;
+  vertical-align: middle;
+  margin-right: 4px;
+  border-radius: 4px;
+}
