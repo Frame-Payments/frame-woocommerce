@@ -1,91 +1,103 @@
 (function ($) {
-  async function boot() {
-    // Wait for Frame.js to load
-    if (typeof window.Frame === 'undefined') {
-      setTimeout(boot, 50);
-      return;
-    }
+  let frameInstance = null;
+  let cardElement = null;
+  let mountedOnce = false;
+
+  async function initFrame() {
+    if (frameInstance) return frameInstance;
+    if (typeof window.Frame === 'undefined') return null;
 
     const cfg = document.querySelector('#frame-js-config');
-    if (!cfg) return;
+    if (!cfg) return null;
 
     const pk = cfg.getAttribute('data-pk');
-    if (!pk) return;
+    if (!pk) return null;
 
-    // Prevent double-initialization (checkout reloads trigger multiple times)
-    if (window.__frame_wc_inited) return;
-    window.__frame_wc_inited = true;
+    frameInstance = await window.Frame.init(pk);
+    return frameInstance;
+  }
 
-    // Initialize Frame.js
-    const frame = await window.Frame.init(pk);
+  async function mountCard() {
+    const container = document.getElementById('frame-card');
+    if (!container) return;                 // nothing to mount into
 
-    // Mount a single Card element
-    const mountEl = document.getElementById('frame-card-fields');
-    if (!mountEl || mountEl.dataset.mounted === '1') return;
+    // If Woo refreshed the DOM, mount again (but never duplicate)
+    if (container.dataset.mounted === '1' && cardElement) return;
 
-    const card = await frame.createElement('card', {
-      theme: frame.themes('clean'),
+    const frame = await initFrame();
+    if (!frame) return;
+
+    // If a previous element exists (after updated_checkout), unmount it
+    if (typeof cardElement?.unmount === 'function') {
+      try { cardElement.unmount(); } catch (e) {}
+      cardElement = null;
+    }
+
+    cardElement = await frame.createElement('card', {
+      theme: frame.themes('clean'), // neutral theme with placeholders
     });
-    card.mount('#frame-card-fields');
-    mountEl.dataset.mounted = '1';
 
-    // Listen for card completion
-    card.on('complete', (payload) => {
-      console.log('[Frame WC] card complete:', payload);
+    await cardElement.mount('#frame-card');
+    container.dataset.mounted = '1';
+    mountedOnce = true;
 
-      const card = payload?.card || {};
-      const cardData = {
-        number: card.number,
-        exp_month: card.expiry?.month,
-        exp_year: card.expiry?.year,
-        cvc: card.cvc,
-      };
+    // Keep hidden field updated for server-side processing
+    cardElement.on('complete', (payload) => {
+      const hidden = document.getElementById('frame_payment_method_data')
+                || document.querySelector('input[name="frame_payment_method_data"]');
+      if (hidden) hidden.value = JSON.stringify(payload?.card || {});
+    });
+  }
 
-      const json = JSON.stringify(cardData);
+  // Woo will call this before placing an order with your gateway
+  function bindSubmitGuard() {
+    const $form = $('form.checkout');
+    if (!$form.length || $form.data('frame-guard-bound')) return;
 
-      // Always ensure hidden input exists
-      let hidden =
-        document.getElementById('frame_payment_method_data') ||
-        document.querySelector('input[name="frame_payment_method_data"]');
-      if (!hidden) {
-        hidden = document.createElement('input');
-        hidden.type = 'hidden';
-        hidden.id = 'frame_payment_method_data';
-        hidden.name = 'frame_payment_method_data';
-        (document.querySelector('form.checkout') || document.body).appendChild(hidden);
+    $form.data('frame-guard-bound', true);
+    $form.on('checkout_place_order_frame', async function () {
+      // Ensure card is present & complete
+      if (!cardElement) {
+        await mountCard();
       }
 
-      hidden.value = json;
-      console.log('[Frame WC] wrote hidden JSON:', hidden.value);
-    });
+      const state = (typeof cardElement?.getState === 'function')
+        ? await cardElement.getState()
+        : null;
 
-    // When checkout updates (AJAX refresh), clear stale card data
-    $(document.body).on('updated_checkout', () => {
+      if (!state?.isComplete) {
+        window.wc_checkout_form?.submit_error?.(
+          '<ul class="woocommerce-error"><li>Please complete your card details.</li></ul>'
+        );
+        return false;
+      }
+
       const hidden = document.getElementById('frame_payment_method_data');
-      if (hidden) hidden.value = '';
+      if (!hidden || !hidden.value) {
+        window.wc_checkout_form?.submit_error?.(
+          '<ul class="woocommerce-error"><li>Payment details missing. Please try again.</li></ul>'
+        );
+        return false;
+      }
+
+      return true;
     });
+  }
 
-    // Bind WooCommerce form submission for this gateway
-    const $form = $('form.checkout');
-    if ($form.length && !$form.data('frame-bound')) {
-      $form.data('frame-bound', true);
-
-      $form.on('checkout_place_order_frame', function () {
-        console.log('[Frame WC] submit hook fired');
-
-        const val = $('#frame_payment_method_data').val();
-        if (!val || val === '{}') {
-          window.wc_checkout_form?.submit_error?.(
-            '<div class="woocommerce-error">Please complete your card details.</div>'
-          );
-          return false;
-        }
-
-        return true;
-      });
-    }
+  function boot() {
+    // initial render
+    mountCard();
+    bindSubmitGuard();
   }
 
   $(boot);
-  $(document.body).on('updated_checkout wc-credit-card-form-init', boot);
+  // Remount after Woo refreshes checkout fragments
+  $(document.body).on('updated_checkout wc-credit-card-form-init', () => {
+    // Reset mounted flag if Woo replaced the mount node
+    const container = document.getElementById('frame-card');
+    if (container && container.dataset.mounted !== '1') {
+      mountCard();
+    }
+    bindSubmitGuard();
+  });
 })(jQuery);

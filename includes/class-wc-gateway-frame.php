@@ -22,7 +22,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         $this->id = 'frame';
         $this->method_title = __('Frame', 'frame-wc');
         $this->method_description = __('Accept payments via Frame.', 'frame-wc');
-        $this->icon = FRAME_WC_URL . 'assets/img/frame-logo.png';
+        // $this->icon = FRAME_WC_URL . 'assets/img/frame-logo.png';
         $this->has_fields = true;
 
         $this->init_form_fields();
@@ -504,10 +504,20 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         // Publishable key for frame-js init
         echo '<div id="frame-js-config" data-pk="' . esc_attr($this->public_key) . '"></div>';
 
-        // Container where frame-js will mount its single Card element
-        echo '<div id="frame-card-fields"></div>';
+        // Payment form container
+        echo '<div class="frame-wc-box">';
+        echo '  <div class="frame-card-wrap">';
+        echo '      <div id="frame-card" class="frame-card-mount"></div>';
+        echo '      <div class="frame-card-brands" aria-hidden="true">
+                        <img src="' . esc_url(FRAME_WC_URL . 'assets/img/visa.svg') . '" alt="Visa" loading="lazy">
+                        <img src="' . esc_url(FRAME_WC_URL . 'assets/img/mastercard.svg') . '" alt="MasterCard" loading="lazy">
+                        <img src="' . esc_url(FRAME_WC_URL . 'assets/img/amex.svg') . '" alt="Amex" loading="lazy">
+                        <img src="' . esc_url(FRAME_WC_URL . 'assets/img/discover.svg') . '" alt="Discover" loading="lazy">
+                    </div>';
+        echo '  </div>';
+        echo '</div>';
 
-        // Hidden field where JS will place the payment method token
+        // Hidden field where JS stores the card payload
         echo '<input type="hidden" id="frame_payment_method_data" name="frame_payment_method_data" value="">';
     }
 

@@ -1,7 +1,139 @@
-.payment_method_frame img {
-  width: 32px;
-  height: auto;
-  vertical-align: middle;
-  margin-right: 4px;
-  border-radius: 4px;
+/**
+ * Frame for WooCommerce – Clean, Minimal Checkout Styles
+ * -------------------------------------------------------
+ * One white rounded payment box, a single Frame.js mount,
+ * and card-brand logos overlaid at the top-right.
+ */
+
+/* Tweak positions/sizing of the brand logos here */
+:root{
+  --frame-brand-top: 32px;
+  --frame-brand-right: 16px;
+  --frame-brand-gap: 8px;
+  --frame-brand-height: 22px;
+  --frame-brand-opacity: .95;
+}
+
+/* Isolate gateway area */
+.payment_method_frame {
+  position: relative;
+  display: block;
+}
+
+/* === MAIN CARD CONTAINER === */
+.payment_method_frame .frame-wc-box {
+  margin: 0 auto !important;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.08);
+  padding: 48px;
+  box-shadow: none;
+  width: 100%;
+  max-width: 640px;
+}
+
+/* A simple wrapper so brands can be absolutely positioned */
+.payment_method_frame .frame-card-wrap {
+  position: relative;
+  width: 100%;
+}
+
+/* Where Frame.js mounts */
+.payment_method_frame .frame-card-mount {
+  display: block;
+  width: 100%;
+  margin-bottom: 16px; /* space below the card field */
+}
+
+/* === BRAND LOGOS (overlay) === */
+.payment_method_frame .frame-card-brands {
+  position: absolute;
+  top: var(--frame-brand-top);
+  right: var(--frame-brand-right);
+  display: flex;
+  align-items: center;
+  gap: var(--frame-brand-gap);
+  pointer-events: none; /* allow clicking/typing in the field underneath */
+  z-index: 3;
+}
+
+.payment_method_frame .frame-card-brands img {
+  height: var(--frame-brand-height);
+  width: auto;
+  display: block;
+  opacity: var(--frame-brand-opacity);
+  filter: grayscale(0);
+  transition: opacity .15s ease;
+}
+
+.payment_method_frame .frame-card-brands img:hover {
+  opacity: 1;
+}
+
+/* === BUTTON (optional Woo button tweak) === */
+.payment_method_frame #place_order {
+  background: #0f172a;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-weight: 600;
+  height: 48px;
+  transition: background .2s ease;
+}
+
+.payment_method_frame #place_order:hover {
+  background: #1e293b;
+}
+
+/* === REMOVE LEGACY/DUPLICATE WC CC FIELDS (we use Frame.js) === */
+.payment_method_frame .wc-credit-card-form,
+.payment_method_frame .form-row-card-number,
+.payment_method_frame .form-row-expiry,
+.payment_method_frame .form-row-cvc,
+.payment_method_frame .form-row {
+  display: none !important;
+}
+
+/* === SAFETY: kill pseudo labels from earlier builds === */
+.payment_method_frame [class*="frame-"]::before,
+.payment_method_frame [class*="frame-"]::after {
+  content: none !important;
+}
+
+/* === REMOVE DEFAULT WOO GRAY BOX + TITLE WRAPPER === */
+.payment_box.payment_method_frame {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.payment_box.payment_method_frame::before {
+  display: none !important;
+}
+
+/* Hide any redundant label rendered by WC inside the box */
+.payment_method_frame label,
+.payment_method_frame .wc_payment_method label {
+  display: none !important;
+}
+
+/* === RESPONSIVE === */
+@media (max-width: 600px) {
+  .payment_method_frame .frame-wc-box {
+    padding: 32px 20px;
+  }
+
+  /* On very small screens, drop the overlay to a normal row */
+  .payment_method_frame .frame-card-brands {
+    position: static;
+    margin-top: 8px;
+    justify-content: flex-start;
+  }
+
+  .payment_method_frame #place_order {
+    height: 44px;
+    font-size: 15px;
+  }
 }
