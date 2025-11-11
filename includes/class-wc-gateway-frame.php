@@ -254,8 +254,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             if (
                 !is_array($cardData) ||
                 empty($cardData['number']) ||
-                empty($cardData['exp_month']) ||
-                empty($cardData['exp_year']) ||
+                empty($cardData['expiry']) ||
                 empty($cardData['cvc'])
             ) {
                 // Log for debugging
@@ -267,8 +266,8 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             }
 
             $cardNumber = (string) $cardData['number'];
-            $expMonth   = (string) $cardData['exp_month'];
-            $expYear    = (string) $cardData['exp_year'];
+            $expMonth = isset($cardData['expiry']['month']) ? (string) $cardData['expiry']['month'] : '';
+            $expYear  = isset($cardData['expiry']['year'])  ? (string) $cardData['expiry']['year']  : '';
             $cvc        = (string) $cardData['cvc'];
 
             $address = new Address(
