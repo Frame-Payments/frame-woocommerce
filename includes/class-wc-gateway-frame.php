@@ -47,6 +47,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         add_action('woocommerce_order_action_frame_capture', [ $this, 'admin_capture' ] );
         add_action('woocommerce_order_action_frame_void',    [ $this, 'admin_void' ] );
         add_action('woocommerce_order_action_frame_refund',  [ $this, 'admin_refund' ] );
+        add_action('woocommerce_api_frame_webhook', [ $this, 'handle_webhook' ]);
     }
 
     public function init_form_fields() {
@@ -349,8 +350,6 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 'redirect_url' => $intent->redirect_url ?? null,
             ];
 
-            wc_get_logger()->info('[Frame WC] create response: ' . wp_json_encode($intentArr), ['source' => 'frame-payments-for-woocommerce']);
-
             // Normalize enum/string for status BEFORE saving/logging
             $status_raw = $intentArr['status'] ?? ($intent->status ?? null);
             $last_status = $this->frame_status_to_string($status_raw); // returns plain string
@@ -398,13 +397,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
 
         try {
             $intent = (new \Frame\Endpoints\ChargeIntents())->retrieve($intentId);
-
-            $rawStatus = $intent->status ?? null;
-            if ($rawStatus instanceof ChargeIntentStatus) {
-                $status = $rawStatus->value;
-            } else {
-                $status = is_string($rawStatus) ? $rawStatus : '';
-            }
+            $status = $this->frame_status_to_string($intent->status ?? null);
 
             if ($status !== '') {
                 $order->update_meta_data('_frame_last_status', $status);
@@ -584,5 +577,139 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             return (string) $maybe->value;
         }
         return is_string($maybe) ? $maybe : (string) $maybe;
+    }
+
+    private function verify_webhook_signature(string $raw_body): bool {
+        $secret = (string) ($this->webhook_secret ?? '');
+        if ($secret === '' || $raw_body === '') return false;
+
+        // Header from PHP superglobals (X-Frame-Signature → HTTP_X_FRAME_SIGNATURE)
+        $hdr = isset($_SERVER['HTTP_X_FRAME_SIGNATURE']) ? trim((string) $_SERVER['HTTP_X_FRAME_SIGNATURE']) : '';
+        if ($hdr === '') return false;
+
+        // Expect "sha256=<hex>"
+        if (!str_starts_with($hdr, 'sha256=')) return false;
+        $provided_hex = substr($hdr, 7);
+
+        // Compute hex digest of raw body with secret
+        $calc_hex = hash_hmac('sha256', $raw_body, $secret); // hex output
+
+        // Constant-time compare
+        return hash_equals($provided_hex, $calc_hex);
+    }
+
+    public function handle_webhook() {
+        $logc = ['source' => 'frame-payments-for-woocommerce'];
+
+        // 1) Read RAW body
+        $raw = file_get_contents('php://input'); // do NOT wp_unslash / json re-encode
+        if (!is_string($raw) || $raw === '') {
+            wc_get_logger()->warning('[Frame WC] Webhook: empty body', $logc);
+            status_header(400); exit;
+        }
+
+        // 2) Verify signature
+        if (!$this->verify_webhook_signature($raw)) {
+            wc_get_logger()->warning('[Frame WC] Webhook: bad signature', $logc);
+            status_header(400); exit;
+        }
+
+        // 3) Decode JSON
+        $evt = json_decode($raw, true);
+        if (!is_array($evt)) {
+            wc_get_logger()->warning('[Frame WC] Webhook: invalid JSON', $logc);
+            status_header(400); exit;
+        }
+
+        $eventId = (string) ($evt['id'] ?? ($_SERVER['HTTP_X_FRAME_WEBHOOK_ID'] ?? ''));
+        $type    = (string) ($evt['type'] ?? ($_SERVER['HTTP_X_FRAME_EVENT'] ?? ''));
+        $livemode = (bool) ($evt['livemode'] ?? false);
+        $object  = is_array($evt['data'] ?? null) ? (($evt['data']['object'] ?? null) ?: ($evt['data'] ?? null)) : ($evt['data'] ?? []);
+
+        // 4) Locate the order
+        $intentId = (string) ($object['id'] ?? $object['charge_intent_id'] ?? '');
+        $wcOrderIdFromMeta = (string) ($object['metadata']['wc_order_id'] ?? '');
+
+        $order = null;
+        if ($intentId !== '') {
+            $q = new \WP_Query([
+                'post_type' => 'shop_order',
+                'post_status' => 'any',
+                'meta_key' => '_frame_intent_id',
+                'meta_value' => $intentId,
+                'fields' => 'ids',
+                'posts_per_page' => 1,
+            ]);
+            if (!empty($q->posts)) $order = wc_get_order($q->posts[0]);
+        }
+        if (!$order && ctype_digit($wcOrderIdFromMeta)) {
+            $order = wc_get_order((int)$wcOrderIdFromMeta);
+        }
+        if (!$order instanceof \WC_Order) {
+            wc_get_logger()->warning("[Frame WC] Webhook: order not found for intent={$intentId} meta_wc_order_id={$wcOrderIdFromMeta}", $logc);
+            status_header(200); echo 'ok'; exit; // acknowledge so retries stop
+        }
+
+        // 5) Idempotency guard via event id
+        if ($eventId && $order->get_meta('_frame_last_event_id') === $eventId) {
+            status_header(200); echo 'ok'; exit;
+        }
+
+        // 6) Map events → Woo statuses
+        $status_note = '';
+        switch ($type) {
+            case 'charge_intent.succeeded':
+            case 'charge.captured':
+                $order->payment_complete($intentId ?: $order->get_transaction_id());
+                $status_note = 'payment succeeded (webhook)';
+                break;
+
+            case 'charge_intent.requires_action':
+                if (!$order->is_paid()) {
+                    $order->update_status('on-hold', __('Frame: requires action (webhook).', 'frame-payments-for-woocommerce'));
+                }
+                $status_note = 'requires action';
+                break;
+
+            case 'charge_intent.payment_failed':
+                if (!$order->is_paid()) {
+                    $order->update_status('failed', __('Frame: payment failed (webhook).', 'frame-payments-for-woocommerce'));
+                }
+                $status_note = 'payment failed';
+                break;
+
+            case 'charge_intent.created':
+                if (!$order->is_paid()) {
+                    $order->update_status('on-hold', __('Frame: intent created (webhook).', 'frame-payments-for-woocommerce'));
+                }
+                $status_note = 'intent created';
+                break;
+
+            default:
+                // Other events (customers, subs, etc.) — do nothing to order
+                $status_note = "event {$type}";
+                break;
+        }
+
+        // 7) Persist markers
+        if ($intentId && !$order->get_meta('_frame_intent_id')) {
+            $order->update_meta_data('_frame_intent_id', $intentId);
+        }
+        if ($eventId) $order->update_meta_data('_frame_last_event_id', $eventId);
+        if ($type)    $order->update_meta_data('_frame_last_event_type', $type);
+        if (isset($object['status'])) {
+            $order->update_meta_data('_frame_last_status', $this->frame_status_to_string($object['status']));
+        }
+        if ($status_note) $order->add_order_note('Frame: '.$status_note);
+        $order->save();
+
+        wc_get_logger()->info('[Frame WC] Webhook handled: ' . wp_json_encode([
+            'event' => $type,
+            'intent' => $intentId,
+            'order_id' => $order->get_id(),
+            'livemode' => $livemode,
+        ]), $logc);
+
+        status_header(200); echo 'ok'; exit;
     }
 }
