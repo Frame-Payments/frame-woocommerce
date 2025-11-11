@@ -350,8 +350,6 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 'redirect_url' => $intent->redirect_url ?? null,
             ];
 
-            wc_get_logger()->info('[Frame WC] create response: ' . wp_json_encode($intentArr), ['source' => 'frame-payments-for-woocommerce']);
-
             // Normalize enum/string for status BEFORE saving/logging
             $status_raw = $intentArr['status'] ?? ($intent->status ?? null);
             $last_status = $this->frame_status_to_string($status_raw); // returns plain string
@@ -399,13 +397,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
 
         try {
             $intent = (new \Frame\Endpoints\ChargeIntents())->retrieve($intentId);
-
-            $rawStatus = $intent->status ?? null;
-            if ($rawStatus instanceof ChargeIntentStatus) {
-                $status = $rawStatus->value;
-            } else {
-                $status = is_string($rawStatus) ? $rawStatus : '';
-            }
+            $status = $this->frame_status_to_string($intent->status ?? null);
 
             if ($status !== '') {
                 $order->update_meta_data('_frame_last_status', $status);
