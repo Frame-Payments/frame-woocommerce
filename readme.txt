@@ -1,10 +1,10 @@
 === Frame for WooCommerce ===
 Contributors: framepayments
-Tags: payments, credit card, checkout, gateway, frame, fintech
+Tags: payments, checkout, gateway, frame, fintech
 Requires at least: 6.3
-Tested up to: 9.0
+Tested up to: 6.8
 Requires PHP: 8.2
-Stable tag: 1.0.0
+Stable tag: 1.0.6
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -42,19 +42,3 @@ Yes — you can switch between test and live keys in the gateway settings.
 
 = Where can I get help? =
 Visit [https://docs.framepayments.com/](https://docs.framepayments.com/) or email support@framepayments.com.
-
-== Screenshots ==
-
-1. Frame checkout field on the WooCommerce checkout page  
-2. Payment settings screen with API keys  
-3. Order details showing Frame transaction ID
-
-== Changelog ==
-
-= 1.0.0 =
-* Initial release — adds full Frame payments integration with Charge Intents, Refunds, and webhooks.
-
-== Upgrade Notice ==
-
-= 1.0.0 =
-First stable release of Frame for WooCommerce.

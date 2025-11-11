@@ -3,25 +3,28 @@
  * Plugin Name: Frame for WooCommerce
  * Plugin URI:  https://framepayments.com/
  * Description: Accept payments through Frame — secure, modern payment infrastructure for WooCommerce.
- * Version:     1.0.5
+ * Version:     1.0.6
  * Author:      Frame
  * Author URI:  https://framepayments.com/
  * License:     GPL-3.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-3.0.html
- * Text Domain: frame-wc
+ * Text Domain: frame-payments-for-woocommerce
  * Domain Path: /languages
  * Requires PHP: 8.2
  * Requires at least: 6.3
- * WC requires at least: 8.0
- * WC tested up to: 9.0
+ * WC requires at least: 6.0
+ * WC tested up to: 6.8
  */
 
 if (!defined('ABSPATH')) { exit; } // no direct access
+if (!defined('FRAME_WC_TD')) {
+    define('FRAME_WC_TD', 'frame-payments-for-woocommerce');
+}
 
 /** -------------------------------------------------------
  * Core constants (define at top level, not inside a hook)
  * ------------------------------------------------------ */
-define('FRAME_WC_VERSION', '1.0.5');
+define('FRAME_WC_VERSION', '1.0.6');
 define('FRAME_WC_FILE', __FILE__);
 define('FRAME_WC_DIR', plugin_dir_path(__FILE__));
 define('FRAME_WC_URL', plugin_dir_url(__FILE__));
@@ -33,7 +36,16 @@ if (file_exists(FRAME_WC_DIR . 'vendor/autoload.php')) {
     require FRAME_WC_DIR . 'vendor/autoload.php';
 } else {
     add_action('admin_notices', function () {
-        echo '<div class="notice notice-error"><p><strong>Frame Payments for WooCommerce:</strong> Composer autoload not found. Run <code>composer install</code> in the plugin directory.</p></div>';
+        echo '<div class="notice notice-error"><p><strong>' .
+        esc_html__( 'Frame Payments for WooCommerce:', 'frame-payments-for-woocommerce' ) .
+        '</strong> ' .
+        sprintf(
+            /* translators: 1: <code>, 2: </code> */
+            esc_html__( 'Composer autoload not found. Run %1$scomposer install%2$s in the plugin directory.', 'frame-payments-for-woocommerce' ),
+            '<code>',
+            '</code>'
+        ) .
+        '</p></div>';
     });
     // Don’t proceed without deps
     return;
@@ -45,7 +57,11 @@ if (file_exists(FRAME_WC_DIR . 'vendor/autoload.php')) {
 add_action('admin_init', function () {
     if (!class_exists('WooCommerce')) {
         add_action('admin_notices', function () {
-            echo '<div class="notice notice-error"><p><strong>Frame Payments for WooCommerce</strong> requires WooCommerce to be installed and active.</p></div>';
+            echo '<div class="notice notice-error"><p><strong>' .
+            esc_html__( 'Frame Payments for WooCommerce', 'frame-payments-for-woocommerce' ) .
+            '</strong> ' .
+            esc_html__( 'requires WooCommerce to be installed and active.', 'frame-payments-for-woocommerce' ) .
+            '</p></div>';
         });
     }
 });
@@ -62,9 +78,13 @@ add_action('before_woocommerce_init', function () {
     }
 });
 
-add_action('plugins_loaded', function () {
-    load_plugin_textdomain('frame-wc', false, dirname(plugin_basename(__FILE__)) . '/languages/');
-});
+// add_action('plugins_loaded', function () {
+//     load_plugin_textdomain(
+//         'frame-payments-for-woocommerce',
+//         false,
+//         dirname(plugin_basename(__FILE__)) . '/languages'
+//     );
+// });
 
 /** -------------------------------------------------------
  * Frontend assets (loads only on Checkout)
@@ -76,13 +96,13 @@ add_action('wp_enqueue_scripts', function () {
             'frame-js',
             'https://js.framepayments.com/v1/index.js',
             [],
-            null,
+            FRAME_WC_VERSION,
             true
         );
 
         // Load our glue script after frame-js
         wp_enqueue_script(
-            'frame-wc',
+            FRAME_WC_TD,
             FRAME_WC_URL . 'assets/js/frame-wc.js',
             ['jquery', 'frame-js'],
             FRAME_WC_VERSION,
@@ -90,7 +110,7 @@ add_action('wp_enqueue_scripts', function () {
         );
 
         wp_enqueue_style(
-            'frame-wc',
+            FRAME_WC_TD,
             FRAME_WC_URL . 'assets/css/frame-wc.css',
             [],
             FRAME_WC_VERSION
@@ -129,7 +149,9 @@ add_action('woocommerce_api_frame_webhook', function () {
 
     // Optional signature verification
     // Header name may vary; adjust to Frame docs when available.
-    $signature = $_SERVER['HTTP_FRAME_SIGNATURE'] ?? '';
+    $signature_raw = filter_input( INPUT_SERVER, 'HTTP_FRAME_SIGNATURE', FILTER_UNSAFE_RAW );
+    $signature_raw = is_string( $signature_raw ) ? wp_unslash( $signature_raw ) : '';
+    $signature = is_string($signature_raw) ? sanitize_text_field($signature_raw) : '';
     $secret    = get_option('woocommerce_frame_settings')['webhook_secret'] ?? '';
     if ($secret) {
         $expected = hash_hmac('sha256', $body, $secret);
@@ -161,8 +183,8 @@ add_action('woocommerce_api_frame_webhook', function () {
         if (!$order_id && $parentCid) {
             $found = wc_get_orders([
                 'limit'      => 1,
-                'meta_key'   => '_frame_intent_id',
-                'meta_value' => $parentCid,
+                'meta_key'   => '_frame_intent_id',  // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- point lookup used to resolve order by payment intent
+                'meta_value' => $parentCid, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
                 'return'     => 'ids',
             ]);
             if (!empty($found)) {
@@ -176,12 +198,13 @@ add_action('woocommerce_api_frame_webhook', function () {
                 $order->update_meta_data('_frame_last_status', $refundStat);
                 $order->add_order_note(
                     sprintf(
-                        __('Frame: refund %s (status: %s).', 'frame-wc'),
+                        /* translators: 1: Frame refund ID, 2: refund status string */
+                        __('Frame: refund %1$s (status: %2$s).', 'frame-payments-for-woocommerce'),
                         esc_html($refundId ?? ''),
                         esc_html($refundStat)
                     )
                 );
-                $order->update_status('refunded', __('Frame: refund confirmed via webhook.', 'frame-wc'));
+                $order->update_status('refunded', __('Frame: refund confirmed via webhook.', 'frame-payments-for-woocommerce'));
                 $order->save();
             }
         }
@@ -195,8 +218,8 @@ add_action('woocommerce_api_frame_webhook', function () {
     if (!$order_id && $cid) {
         $found = wc_get_orders([
             'limit'      => 1,
-            'meta_key'   => '_frame_intent_id',
-            'meta_value' => $cid,
+            'meta_key'   => '_frame_intent_id', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- point lookup used to resolve order by payment intent
+            'meta_value' => $cid,               // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
             'return'     => 'ids',
         ]);
         if (!empty($found)) {
@@ -232,7 +255,7 @@ add_action('woocommerce_api_frame_webhook', function () {
         case 'succeeded':
             if (!$order->is_paid()) {
                 $order->payment_complete($cid ?: $order->get_meta('_frame_intent_id'));
-                $order->add_order_note(__('Frame: payment succeeded (webhook).', 'frame-wc'));
+                $order->add_order_note(__('Frame: payment succeeded (webhook).', 'frame-payments-for-woocommerce'));
             }
             break;
 
@@ -240,7 +263,7 @@ add_action('woocommerce_api_frame_webhook', function () {
         case 'incomplete':
             $order->update_status(
                 'on-hold',
-                __('Frame: payment pending or incomplete (webhook).', 'frame-wc')
+                __('Frame: payment pending or incomplete (webhook).', 'frame-payments-for-woocommerce')
             );
             break;
 
@@ -248,37 +271,40 @@ add_action('woocommerce_api_frame_webhook', function () {
         case 'reversed':
             $order->update_status(
                 'refunded',
-                __('Frame: payment refunded or reversed (webhook).', 'frame-wc')
+                __('Frame: payment refunded or reversed (webhook).', 'frame-payments-for-woocommerce')
             );
             break;
 
         case 'canceled':
             $order->update_status(
                 'cancelled',
-                __('Frame: payment canceled (webhook).', 'frame-wc')
+                __('Frame: payment canceled (webhook).', 'frame-payments-for-woocommerce')
             );
             break;
 
         case 'failed':
             $order->update_status(
                 'failed',
-                __('Frame: payment failed (webhook).', 'frame-wc')
+                __('Frame: payment failed (webhook).', 'frame-payments-for-woocommerce')
             );
             break;
 
         case 'disputed':
             $order->update_status(
                 'on-hold',
-                __('Frame: payment disputed (webhook).', 'frame-wc')
+                __('Frame: payment disputed (webhook).', 'frame-payments-for-woocommerce')
             );
             break;
 
         default:
             // Unknown or new status → keep record but don’t alter order
-            $order->add_order_note(sprintf(
-                __('Frame: unhandled webhook status "%s".', 'frame-wc'),
-                esc_html($status)
-            ));
+            $order->add_order_note(
+                sprintf(
+                    /* translators: 1: raw status string returned by Frame */
+                    __('Frame: unhandled webhook status "%1$s".', 'frame-payments-for-woocommerce'),
+                    esc_html($status)
+                )
+            );
             break;
     }
 

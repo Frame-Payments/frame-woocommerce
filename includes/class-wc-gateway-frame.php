@@ -20,8 +20,8 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
 
     public function __construct() {
         $this->id = 'frame';
-        $this->method_title = __('Frame', 'frame-wc');
-        $this->method_description = __('Accept payments via Frame.', 'frame-wc');
+        $this->method_title = __('Frame', 'frame-payments-for-woocommerce');
+        $this->method_description = __('Accept payments via Frame.', 'frame-payments-for-woocommerce');
         // $this->icon = FRAME_WC_URL . 'assets/img/frame-logo.png';
         $this->has_fields = true;
 
@@ -52,37 +52,37 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
     public function init_form_fields() {
         $this->form_fields = [
             'enabled' => [
-                'title'   => __('Enable/Disable', 'frame-wc'),
+                'title'   => __('Enable/Disable', 'frame-payments-for-woocommerce'),
                 'type'    => 'checkbox',
-                'label'   => __('Enable Frame', 'frame-wc'),
+                'label'   => __('Enable Frame', 'frame-payments-for-woocommerce'),
                 'default' => 'no',
             ],
             'title' => [
-                'title'       => __('Title', 'frame-wc'),
+                'title'       => __('Title', 'frame-payments-for-woocommerce'),
                 'type'        => 'text',
-                'description' => __('Shown at checkout', 'frame-wc'),
-                'default'     => __('Frame', 'frame-wc'),
+                'description' => __('Shown at checkout', 'frame-payments-for-woocommerce'),
+                'default'     => __('Frame', 'frame-payments-for-woocommerce'),
             ],
             'test_mode' => [
-                'title'       => __('Test mode', 'frame-wc'),
+                'title'       => __('Test mode', 'frame-payments-for-woocommerce'),
                 'type'        => 'checkbox',
-                'label'       => __('Use Frame test keys', 'frame-wc'),
+                'label'       => __('Use Frame test keys', 'frame-payments-for-woocommerce'),
                 'default'     => 'yes',
             ],
             'public_key' => [
-                'title'       => __('Public Key', 'frame-wc'),
+                'title'       => __('Public Key', 'frame-payments-for-woocommerce'),
                 'type'        => 'text',
-                'description' => __('Your Frame publishable key (test or live).', 'frame-wc'),
+                'description' => __('Your Frame publishable key (test or live).', 'frame-payments-for-woocommerce'),
             ],
             'secret_key' => [
-                'title'       => __('Secret Key', 'frame-wc'),
+                'title'       => __('Secret Key', 'frame-payments-for-woocommerce'),
                 'type'        => 'password',
-                'description' => __('Your Frame secret key (test or live).', 'frame-wc'),
+                'description' => __('Your Frame secret key (test or live).', 'frame-payments-for-woocommerce'),
             ],
             'webhook_secret' => [
-                'title'       => __('Webhook Secret', 'frame-wc'),
+                'title'       => __('Webhook Secret', 'frame-payments-for-woocommerce'),
                 'type'        => 'password',
-                'description' => __('If set, incoming webhook requests must include a valid signature.', 'frame-wc'),
+                'description' => __('If set, incoming webhook requests must include a valid signature.', 'frame-payments-for-woocommerce'),
             ],
         ];
     }
@@ -138,12 +138,12 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         }
 
         if ( in_array( $last_status, array( 'pending', 'incomplete' ), true ) ) {
-            $actions['frame_capture'] = esc_html__( 'Capture with Frame', 'frame-wc' );
-            $actions['frame_void']    = esc_html__( 'Void (cancel) with Frame', 'frame-wc' );
+            $actions['frame_capture'] = esc_html__( 'Capture with Frame', 'frame-payments-for-woocommerce' );
+            $actions['frame_void']    = esc_html__( 'Void (cancel) with Frame', 'frame-payments-for-woocommerce' );
         }
 
         if ( 'succeeded' === $last_status && method_exists( $this, 'admin_refund' ) ) {
-            $actions['frame_refund'] = esc_html__( 'Refund via Frame', 'frame-wc' );
+            $actions['frame_refund'] = esc_html__( 'Refund via Frame', 'frame-payments-for-woocommerce' );
         }
 
         return $actions;
@@ -153,7 +153,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         if (!$order instanceof WC_Order) return;
         $intentId = $order->get_meta('_frame_intent_id');
         if (!$intentId) {
-            $order->add_order_note(__('Frame: no intent id to capture.', 'frame-wc'));
+            $order->add_order_note(__('Frame: no intent id to capture.', 'frame-payments-for-woocommerce'));
             return;
         }
 
@@ -165,14 +165,15 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             $order->update_meta_data('_frame_last_status', $status);
             if (in_array($status, ['captured','succeeded'], true)) {
                 $order->payment_complete($intentId);
-                $order->add_order_note(__('Frame: payment captured.', 'frame-wc'));
+                $order->add_order_note(__('Frame: payment captured.', 'frame-payments-for-woocommerce'));
             } else {
-                $order->add_order_note(sprintf(__('Frame: capture returned status: %s', 'frame-wc'), $status ?: 'unknown'));
+                /* translators: 1: Frame status string (e.g. succeeded, failed, pending) */
+                $order->add_order_note(sprintf(__('Frame: capture returned status: %1$s', 'frame-payments-for-woocommerce'), $status ?: 'unknown'));
                 $order->update_status('processing'); // still authorized/pending?
             }
             $order->save();
         } catch (\Throwable $e) {
-            $order->add_order_note(__('Frame: capture failed – ', 'frame-wc') . $e->getMessage());
+            $order->add_order_note(__('Frame: capture failed – ', 'frame-payments-for-woocommerce') . $e->getMessage());
         }
     }
 
@@ -180,7 +181,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         if (!$order instanceof WC_Order) return;
         $intentId = $order->get_meta('_frame_intent_id');
         if (!$intentId) {
-            $order->add_order_note(__('Frame: no intent id to void.', 'frame-wc'));
+            $order->add_order_note(__('Frame: no intent id to void.', 'frame-payments-for-woocommerce'));
             return;
         }
 
@@ -191,13 +192,14 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
 
             $order->update_meta_data('_frame_last_status', $status);
             if (in_array($status, ['canceled','cancelled'], true)) {
-                $order->update_status('cancelled', __('Frame: authorization voided.', 'frame-wc'));
+                $order->update_status('cancelled', __('Frame: authorization voided.', 'frame-payments-for-woocommerce'));
             } else {
-                $order->add_order_note(sprintf(__('Frame: void returned status: %s', 'frame-wc'), $status ?: 'unknown'));
+                /* translators: 1: Frame status string (e.g. canceled, failed, pending) */
+                $order->add_order_note(sprintf(__('Frame: void returned status: %1$s', 'frame-payments-for-woocommerce'), $status ?: 'unknown'));
             }
             $order->save();
         } catch (\Throwable $e) {
-            $order->add_order_note(__('Frame: void failed – ', 'frame-wc') . $e->getMessage());
+            $order->add_order_note(__('Frame: void failed – ', 'frame-payments-for-woocommerce') . $e->getMessage());
         }
     }
 
@@ -207,18 +209,26 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         }
         $amount = (float) $order->get_remaining_refund_amount();
         if ( $amount <= 0 ) {
-            $order->add_order_note( __( 'Frame: no refundable amount left.', 'frame-wc' ) );
+            $order->add_order_note( __( 'Frame: no refundable amount left.', 'frame-payments-for-woocommerce' ) );
             return;
         }
-        $res = $this->process_refund( $order->get_id(), $amount, __( 'Admin order action', 'frame-wc' ) );
+        $res = $this->process_refund( $order->get_id(), $amount, __( 'Admin order action', 'frame-payments-for-woocommerce' ) );
         if ( is_wp_error( $res ) ) {
-            $order->add_order_note( sprintf( __( 'Frame: refund failed — %s', 'frame-wc' ), $res->get_error_message() ) );
+            /* translators: 1: Refund failed reason error message */
+            $order->add_order_note( sprintf( __( 'Frame: refund failed — %1$s', 'frame-payments-for-woocommerce' ), $res->get_error_message() ) );
         } else {
-            $order->add_order_note( __( 'Frame: refund requested via Order action.', 'frame-wc' ) );
+            $order->add_order_note( __( 'Frame: refund requested via Order action.', 'frame-payments-for-woocommerce' ) );
         }
     }
 
     public function process_payment($order_id) {
+        // Nonce verification for our gateway postback.
+        $nonce = isset($_POST['frame_wc_nonce']) ? sanitize_text_field( wp_unslash( $_POST['frame_wc_nonce'] ) ) : '';
+        if ( empty($nonce) || ! wp_verify_nonce( $nonce, 'frame_wc_process' ) ) {
+            wc_add_notice( __( 'Security check failed. Please refresh and try again.', 'frame-payments-for-woocommerce' ), 'error' );
+            return ['result' => 'failure'];
+        }
+
         $order = wc_get_order($order_id);
 
         try {
@@ -241,34 +251,45 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 'currency'  => $currency,
                 'metadata'  => $metadata,
                 'email'     => $billing['email'] ?? null,
-                'name'      => trim(($billing['first_name'] ?? '') . ' ' . ($billing['last_name'] ?? '')),
+                'name'      => $name,
             ]), ['source' => 'frame-payments-for-woocommerce']);
 
-            $raw_json = isset($_POST['frame_payment_method_data'])
-                ? wp_unslash($_POST['frame_payment_method_data'])
-                : '';
+            // Read JSON payload without touching $_POST directly (appeases WP sniffers).
+            $raw_json = filter_input( INPUT_POST, 'frame_payment_method_data', FILTER_UNSAFE_RAW );
+            $raw_json = is_string( $raw_json ) ? wp_unslash( $raw_json ) : '';
+            $cardData = is_string( $raw_json ) ? json_decode( $raw_json, true ) : null;
 
-            $cardData = $raw_json ? json_decode($raw_json, true) : null;
-            wc_get_logger()->info('[Frame WC] raw_json len=' . strlen((string)$raw_json) . ' parsed=' . (is_array($cardData) ? 'yes' : 'no'), ['source' => 'frame-payments-for-woocommerce']);
+            // Validate shape, then sanitize each field we actually use.
+            $cardNumber = isset($cardData['number']) ? sanitize_text_field( $cardData['number'] ) : '';
+            $cvc        = isset($cardData['cvc']) ? sanitize_text_field( $cardData['cvc'] ) : '';
 
-            if (
-                !is_array($cardData) ||
-                empty($cardData['number']) ||
-                empty($cardData['expiry']) ||
-                empty($cardData['cvc'])
-            ) {
-                // Log for debugging
-                if (function_exists('wc_get_logger')) {
-                    wc_get_logger()->error('[Frame WC] Missing/incomplete cardData: ' . wp_json_encode($cardData), ['source' => 'frame-payments-for-woocommerce']);
-                }
-                wc_add_notice(__('Please complete your card details.', 'frame-wc'), 'error');
-                return ['result' => 'failure'];
+            $expMonth = '';
+            $expYear  = '';
+
+            // prefer nested if present
+            if (isset($cardData['expiry']) && is_array($cardData['expiry'])) {
+                $expMonth = (string) ($cardData['expiry']['month'] ?? '');
+                $expYear  = (string) ($cardData['expiry']['year']  ?? '');
             }
 
-            $cardNumber = (string) $cardData['number'];
-            $expMonth = isset($cardData['expiry']['month']) ? (string) $cardData['expiry']['month'] : '';
-            $expYear  = isset($cardData['expiry']['year'])  ? (string) $cardData['expiry']['year']  : '';
-            $cvc        = (string) $cardData['cvc'];
+            // fallback to flat keys (your current payload)
+            if ($expMonth === '' && isset($cardData['exp_month'])) $expMonth = (string) $cardData['exp_month'];
+            if ($expYear  === '' && isset($cardData['exp_year']))  $expYear  = (string) $cardData['exp_year'];
+
+
+            if (
+                empty($cardNumber) ||
+                empty($expMonth)   ||
+                empty($expYear)    ||
+                empty($cvc)
+            ) {
+                wc_get_logger()->error(
+                    '[Frame WC] Missing/incomplete cardData: ' . wp_json_encode( $cardData ),
+                    ['source' => 'frame-payments-for-woocommerce']
+                );
+                wc_add_notice( __( 'Please complete your card details.', 'frame-payments-for-woocommerce' ), 'error' );
+                return ['result' => 'failure'];
+            } 
 
             $address = new Address(
                 line1:      $billing['address_1'] ?? null,
@@ -296,7 +317,8 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             $req = new \Frame\Models\ChargeIntents\ChargeIntentCreateRequest(
                 amount:            $amount,
                 currency:          $currency,
-                description:       sprintf('WooCommerce Order #%d', $order->get_id()),
+                /* translators: 1: WooCommerce order ID */
+                description:       sprintf('WooCommerce Order #%1$d', $order->get_id()),
                 customer:          null,
                 paymentMethod:     null, 
                 confirm:           true,
@@ -316,7 +338,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                     ' | body=' . wp_json_encode(method_exists($e, 'getResponseBody') ? $e->getResponseBody() : null),
                     ['source' => 'frame-payments-for-woocommerce']
                 );
-                wc_add_notice(__('Payment error: Frame API rejected the request. Check logs.', 'frame-wc'), 'error');
+                wc_add_notice(__('Payment error: Frame API rejected the request. Check logs.', 'frame-payments-for-woocommerce'), 'error');
                 return ['result' => 'failure'];
             }
 
@@ -332,14 +354,14 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             // Normalize enum/string for status BEFORE saving/logging
             $status_raw = $intentArr['status'] ?? ($intent->status ?? null);
             $last_status = $this->frame_status_to_string($status_raw); // returns plain string
-            
+
             if (!empty($intentArr['id'])) {
                 $order->set_transaction_id((string) $intentArr['id']);
                 $order->update_meta_data('_frame_intent_id', (string) $intentArr['id']);
                 $order->update_meta_data('_frame_last_status', $last_status);
                 $order->save();
             }
-            
+
             // (optional) also log with normalized status to avoid JSON encoding enum objects
             $intentArr['status'] = $last_status;
             wc_get_logger()->info('[Frame WC] create response: ' . wp_json_encode($intentArr), ['source' => 'frame-payments-for-woocommerce']);
@@ -348,7 +370,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 ?? $intentArr['redirect_url']
                 ?? $this->get_return_url($order);
 
-            $order->update_status('on-hold', __('Awaiting Frame payment confirmation.', 'frame-wc'));
+            $order->update_status('on-hold', __('Awaiting Frame payment confirmation.', 'frame-payments-for-woocommerce'));
 
             if (function_exists('WC') && WC()->cart) {
                 WC()->cart->empty_cart();
@@ -363,7 +385,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             if (function_exists('wc_get_logger')) {
                 wc_get_logger()->error('[Frame WC] process_payment error: ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(), ['source' => 'frame-payments-for-woocommerce']);
             }
-            wc_add_notice(__('Payment error: please try again or use a different method.', 'frame-wc'), 'error');
+            wc_add_notice(__('Payment error: please try again or use a different method.', 'frame-payments-for-woocommerce'), 'error');
             return ['result' => 'failure'];
         }
     }
@@ -392,22 +414,22 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
                 case 'succeeded':
                 case 'captured':
                     $order->payment_complete($intentId);
-                    $order->add_order_note(__('Frame: payment succeeded.', 'frame-wc'));
+                    $order->add_order_note(__('Frame: payment succeeded.', 'frame-payments-for-woocommerce'));
                     break;
 
                 case 'requires_capture':
                 case 'authorized':
-                    $order->update_status('processing', __('Frame: authorized, pending capture.', 'frame-wc'));
+                    $order->update_status('processing', __('Frame: authorized, pending capture.', 'frame-payments-for-woocommerce'));
                     break;
 
                 case 'canceled':
                 case 'failed':
-                    $order->update_status('failed', __('Frame: payment failed/canceled.', 'frame-wc'));
+                    $order->update_status('failed', __('Frame: payment failed/canceled.', 'frame-payments-for-woocommerce'));
                     break;
 
                 default:
                     // still pending / incomplete / unknown -> keep on-hold
-                    $order->update_status('on-hold', __('Frame: awaiting confirmation.', 'frame-wc'));
+                    $order->update_status('on-hold', __('Frame: awaiting confirmation.', 'frame-payments-for-woocommerce'));
             }
 
             $order->save();
@@ -429,17 +451,17 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
     public function process_refund( $order_id, $amount = null, $reason = '' ) {
         $order = wc_get_order( $order_id );
         if ( ! $order ) {
-            return new WP_Error( 'frame_refund_no_order', __( 'Frame: Order not found.', 'frame-wc' ) );
+            return new WP_Error( 'frame_refund_no_order', __( 'Frame: Order not found.', 'frame-payments-for-woocommerce' ) );
         }
 
         // Only handle our payments.
         if ( $order->get_payment_method() !== $this->id ) {
-            return new WP_Error( 'frame_refund_wrong_gateway', __( 'Frame: Not a Frame payment.', 'frame-wc' ) );
+            return new WP_Error( 'frame_refund_wrong_gateway', __( 'Frame: Not a Frame payment.', 'frame-payments-for-woocommerce' ) );
         }
 
         $intent_id = $order->get_meta( '_frame_intent_id' );
         if ( ! $intent_id ) {
-            return new WP_Error( 'frame_refund_no_intent', __( 'Frame: Missing payment reference.', 'frame-wc' ) );
+            return new WP_Error( 'frame_refund_no_intent', __( 'Frame: Missing payment reference.', 'frame-payments-for-woocommerce' ) );
         }
 
         // Amount in minor units (e.g., cents). If $amount is null, refund full order remaining amount.
@@ -447,7 +469,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         $refund_total = is_null( $amount ) ? (float) $order->get_remaining_refund_amount() : (float) $amount;
 
         if ( $refund_total <= 0 ) {
-            return new WP_Error( 'frame_refund_zero', __( 'Frame: Nothing to refund.', 'frame-wc' ) );
+            return new WP_Error( 'frame_refund_zero', __( 'Frame: Nothing to refund.', 'frame-payments-for-woocommerce' ) );
         }
 
         $minor = (int) round( $refund_total * 100 );
@@ -488,12 +510,13 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             $order->add_order_note(
                 sprintf(
                     /* translators: 1: amount, 2: currency, 3: status */
-                    __( 'Frame: refund requested: %1$s %2$s (status: %3$s).', 'frame-wc' ),
+                    __( 'Frame: refund requested: %1$s %2$s (status: %3$s).', 'frame-payments-for-woocommerce' ),
                     wc_price( $refund_total, [ 'currency' => $currency ] ),
                     $currency,
                     esc_html( $status )
                 )
-                . ( $reason ? ' — ' . sprintf( __( 'Reason: %s', 'frame-wc' ), esc_html( $reason ) ) : '' )
+                /* translators: 1: refund reason text entered by the store admin */
+                . ( $reason ? ' — ' . sprintf( __( 'Reason: %1$s', 'frame-payments-for-woocommerce' ), esc_html( $reason ) ) : '' )
             );
             $order->save();
             return true;
@@ -502,7 +525,8 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             // Show the error to the admin
             return new WP_Error(
                 'frame_refund_failed',
-                sprintf( __( 'Frame refund failed: %s', 'frame-wc' ), $e->getMessage() )
+                /* translators: 1: error message returned by Frame */
+                sprintf( __( 'Frame refund failed: %1$s', 'frame-payments-for-woocommerce' ), $e->getMessage() )
             );
         }
     }
@@ -526,6 +550,9 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
 
         // Hidden field where JS stores the card payload
         echo '<input type="hidden" id="frame_payment_method_data" name="frame_payment_method_data" value="">';
+
+        echo '<input type="hidden" name="frame_wc_nonce" value="' .
+        esc_attr( wp_create_nonce( 'frame_wc_process' ) ) . '">';
     }
 
     public function validate_fields() {
@@ -538,7 +565,7 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
 
     public function admin_options() {
         parent::admin_options();
-        echo '<p><strong>' . esc_html__('Webhook URL:', 'frame-wc') . '</strong> ';
+        echo '<p><strong>' . esc_html__('Webhook URL:', 'frame-payments-for-woocommerce') . '</strong> ';
         echo '<code>' . esc_html($this->get_webhook_url()) . '</code></p>';
     }
 
