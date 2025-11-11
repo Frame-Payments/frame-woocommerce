@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name: Frame for WooCommerce
- * Plugin URI:  https://framepayments.com/
+ * Plugin URI:  https://github.com/Frame-Payments/frame-woocommerce
  * Description: Accept payments through Frame — secure, modern payment infrastructure for WooCommerce.
- * Version:     1.0.6
+ * Version:     1.0.10
  * Author:      Frame
  * Author URI:  https://framepayments.com/
  * License:     GPL-3.0-or-later
@@ -24,7 +24,7 @@ if (!defined('FRAME_WC_TD')) {
 /** -------------------------------------------------------
  * Core constants (define at top level, not inside a hook)
  * ------------------------------------------------------ */
-define('FRAME_WC_VERSION', '1.0.6');
+define('FRAME_WC_VERSION', '1.0.10');
 define('FRAME_WC_FILE', __FILE__);
 define('FRAME_WC_DIR', plugin_dir_path(__FILE__));
 define('FRAME_WC_URL', plugin_dir_url(__FILE__));

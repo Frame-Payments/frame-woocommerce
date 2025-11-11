@@ -14,7 +14,7 @@ use Frame\Models\PaymentMethods\PaymentMethodType;
 use Frame\Models\Refunds\RefundCreateRequest;
 use Frame\Models\Refunds\RefundReason;
 
-class WC_Gateway_Frame extends WC_Payment_Gateway {
+class Frame_WC_Gateway extends WC_Payment_Gateway {
 
     protected $client;
 
@@ -583,32 +583,35 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         $secret = (string) ($this->webhook_secret ?? '');
         if ($secret === '' || $raw_body === '') return false;
 
-        // Header from PHP superglobals (X-Frame-Signature → HTTP_X_FRAME_SIGNATURE)
-        $hdr = isset($_SERVER['HTTP_X_FRAME_SIGNATURE']) ? trim((string) $_SERVER['HTTP_X_FRAME_SIGNATURE']) : '';
-        if ($hdr === '') return false;
+        // Read from INPUT_SERVER to satisfy PHPCS (no direct $_SERVER access)
+        $sig_input = filter_input(INPUT_SERVER, 'HTTP_X_FRAME_SIGNATURE', FILTER_UNSAFE_RAW);
+        $sig_input = is_string($sig_input) ? wp_unslash($sig_input) : '';
 
-        // Expect "sha256=<hex>"
-        if (!str_starts_with($hdr, 'sha256=')) return false;
+        // Signature must remain raw; do not sanitize, only trim.
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- HMAC must use raw header bytes
+        $hdr = is_string($sig_input) ? trim($sig_input) : '';
+        if ($hdr === '' || strpos($hdr, 'sha256=') !== 0) {
+            return false;
+        }
+
         $provided_hex = substr($hdr, 7);
-
-        // Compute hex digest of raw body with secret
+        // Compute hex digest of RAW body with secret (Frame spec)
         $calc_hex = hash_hmac('sha256', $raw_body, $secret); // hex output
 
-        // Constant-time compare
         return hash_equals($provided_hex, $calc_hex);
     }
 
     public function handle_webhook() {
         $logc = ['source' => 'frame-payments-for-woocommerce'];
 
-        // 1) Read RAW body
-        $raw = file_get_contents('php://input'); // do NOT wp_unslash / json re-encode
+        // 1) RAW body
+        $raw = file_get_contents('php://input');
         if (!is_string($raw) || $raw === '') {
             wc_get_logger()->warning('[Frame WC] Webhook: empty body', $logc);
             status_header(400); exit;
         }
 
-        // 2) Verify signature
+        // 2) Verify signature first (uses raw body)
         if (!$this->verify_webhook_signature($raw)) {
             wc_get_logger()->warning('[Frame WC] Webhook: bad signature', $logc);
             status_header(400); exit;
@@ -621,10 +624,20 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
             status_header(400); exit;
         }
 
-        $eventId = (string) ($evt['id'] ?? ($_SERVER['HTTP_X_FRAME_WEBHOOK_ID'] ?? ''));
-        $type    = (string) ($evt['type'] ?? ($_SERVER['HTTP_X_FRAME_EVENT'] ?? ''));
-        $livemode = (bool) ($evt['livemode'] ?? false);
-        $object  = is_array($evt['data'] ?? null) ? (($evt['data']['object'] ?? null) ?: ($evt['data'] ?? null)) : ($evt['data'] ?? []);
+        // ---- Header reads using filter_input (silences PHPCS) ----
+        $id_input    = filter_input(INPUT_SERVER, 'HTTP_X_FRAME_WEBHOOK_ID', FILTER_UNSAFE_RAW);
+        $event_input = filter_input(INPUT_SERVER, 'HTTP_X_FRAME_EVENT',      FILTER_UNSAFE_RAW);
+
+        $hdr_id    = is_string($id_input)    ? sanitize_text_field( wp_unslash($id_input) )    : '';
+        $hdr_event = is_string($event_input) ? sanitize_text_field( wp_unslash($event_input) ) : '';
+
+        $eventId  = (string) ($evt['id']   ?? $hdr_id);
+        $type     = (string) ($evt['type'] ?? $hdr_event);
+        $livemode = (bool)   ($evt['livemode'] ?? false);
+
+        $object = is_array($evt['data'] ?? null)
+            ? ( ($evt['data']['object'] ?? null) ?: ($evt['data'] ?? null) )
+            : ($evt['data'] ?? []);
 
         // 4) Locate the order
         $intentId = (string) ($object['id'] ?? $object['charge_intent_id'] ?? '');
@@ -713,3 +726,6 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
         status_header(200); echo 'ok'; exit;
     }
 }
+
+// Backwards compatibility for Woo filters or external references
+class_alias('Frame_WC_Gateway', 'WC_Gateway_Frame');
