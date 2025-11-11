@@ -329,12 +329,20 @@ class WC_Gateway_Frame extends WC_Payment_Gateway {
 
             wc_get_logger()->info('[Frame WC] create response: ' . wp_json_encode($intentArr), ['source' => 'frame-payments-for-woocommerce']);
 
+            // Normalize enum/string for status BEFORE saving/logging
+            $status_raw = $intentArr['status'] ?? ($intent->status ?? null);
+            $last_status = $this->frame_status_to_string($status_raw); // returns plain string
+            
             if (!empty($intentArr['id'])) {
-                $order->set_transaction_id($intentArr['id']);
-                $order->update_meta_data('_frame_intent_id', $intentArr['id']);
-                $order->update_meta_data('_frame_last_status', $intentArr['status'] ?? 'pending');
+                $order->set_transaction_id((string) $intentArr['id']);
+                $order->update_meta_data('_frame_intent_id', (string) $intentArr['id']);
+                $order->update_meta_data('_frame_last_status', $last_status);
                 $order->save();
             }
+            
+            // (optional) also log with normalized status to avoid JSON encoding enum objects
+            $intentArr['status'] = $last_status;
+            wc_get_logger()->info('[Frame WC] create response: ' . wp_json_encode($intentArr), ['source' => 'frame-payments-for-woocommerce']);
 
             $redirect = $intentArr['hosted_url']
                 ?? $intentArr['redirect_url']
