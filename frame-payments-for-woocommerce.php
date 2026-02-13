@@ -87,20 +87,51 @@ add_action('before_woocommerce_init', function () {
 // });
 
 /** -------------------------------------------------------
- * Frontend assets (loads only on Checkout)
+ * Frontend assets (Frame.js loads site-wide for Sonar)
  * ------------------------------------------------------ */
 add_action('wp_enqueue_scripts', function () {
-    if (function_exists('is_checkout') && is_checkout()) {
-        // Load Frame.js directly from Frame’s CDN (required)
-        wp_enqueue_script(
-            'frame-js',
-            'https://js.framepayments.com/v1/index.js',
-            [],
-            FRAME_WC_VERSION,
-            true
-        );
+    // Only load on frontend (not admin)
+    if (is_admin()) {
+        return;
+    }
 
-        // Load our glue script after frame-js
+    // Load Frame.js site-wide for Sonar session tracking
+    wp_enqueue_script(
+        'frame-js',
+        'https://js.framepayments.com/v1/index.js',
+        [],
+        FRAME_WC_VERSION,
+        true
+    );
+
+    // Initialize Frame.js immediately to generate session ID
+    // Only on frontend (not admin) and only if gateway is enabled
+    if (!is_admin() && class_exists('WC_Gateway_Frame')) {
+        // Get gateway settings without instantiating the full class
+        $gateway_options = get_option('woocommerce_frame_settings', []);
+        $enabled = isset($gateway_options['enabled']) && $gateway_options['enabled'] === 'yes';
+        $public_key = $gateway_options['public_key'] ?? '';
+
+        if ($enabled && !empty($public_key)) {
+            wp_add_inline_script(
+                'frame-js',
+                sprintf(
+                    '(function(){
+                        if (typeof window.Frame !== "undefined") {
+                            window.Frame.init("%s").catch(function(err){
+                                console.error("[Frame] Init failed:", err);
+                            });
+                        }
+                    })();',
+                    esc_js($public_key)
+                ),
+                'after'
+            );
+        }
+    }
+
+    // Load checkout-specific scripts only on checkout page
+    if (function_exists('is_checkout') && is_checkout()) {
         wp_enqueue_script(
             FRAME_WC_TD,
             FRAME_WC_URL . 'assets/js/frame-wc.js',

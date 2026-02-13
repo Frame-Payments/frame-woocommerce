@@ -46,6 +46,28 @@ class ChargeIntentsTest extends TestCase
         $this->assertEquals($sampleChargeIntentData['id'], $chargeIntent->id);
     }
 
+    public function testCreateWithSonarSessionId()
+    {
+        $createRequest = new ChargeIntentCreateRequest(
+            amount: 2000,
+            currency: 'usd',
+            sonarSessionId: 'fps_sandbox_01H8X9Y2Z3A4B5C6D7E8F9G0H1'
+        );
+        $sampleChargeIntentData = $this->getSampleChargeIntentData();
+
+        $this->mockClient
+            ->shouldReceive('post')
+            ->once()
+            ->with('/v1/charge_intents', $createRequest->toArray())
+            ->andReturn($sampleChargeIntentData);
+
+        $chargeIntent = $this->chargeIntentsEndpoint->create($createRequest);
+
+        $this->assertInstanceOf(ChargeIntent::class, $chargeIntent);
+        $this->assertArrayHasKey('sonar_session_id', $createRequest->toArray());
+        $this->assertEquals('fps_sandbox_01H8X9Y2Z3A4B5C6D7E8F9G0H1', $createRequest->toArray()['sonar_session_id']);
+    }
+
     public function testUpdate()
     {
         $intentId = 'ci_123';
