@@ -16,27 +16,20 @@
     return frameInstance;
   }
 
-  /**
-   * Captures Sonar session ID from localStorage and stores in hidden input
-   */
   function captureSonarSessionId() {
     try {
       // Frame.js automatically stores session ID here after Frame.init()
       const sessionId = localStorage.getItem('frame_charge_session_id');
 
       if (!sessionId) {
-        // Session might not be created yet - this is normal during initialization
         return;
       }
 
-      // Find checkout form first
       const form = document.querySelector('form.checkout');
       if (!form) {
-        // Not on checkout page or form not ready yet
         return;
       }
 
-      // Find or create hidden input for session ID
       let hidden = document.getElementById('frame_sonar_session_id');
 
       if (!hidden) {
@@ -49,7 +42,6 @@
 
       hidden.value = sessionId;
     } catch (e) {
-      // Silently fail - Sonar is enhancement, not blocker
       if (window.console && console.error) {
         console.error('[Frame] Error capturing Sonar session ID:', e);
       }
