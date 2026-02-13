@@ -16,6 +16,38 @@
     return frameInstance;
   }
 
+  function captureSonarSessionId() {
+    try {
+      // Frame.js automatically stores session ID here after Frame.init()
+      const sessionId = localStorage.getItem('frame_charge_session_id');
+
+      if (!sessionId) {
+        return;
+      }
+
+      const form = document.querySelector('form.checkout');
+      if (!form) {
+        return;
+      }
+
+      let hidden = document.getElementById('frame_sonar_session_id');
+
+      if (!hidden) {
+        hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.id = 'frame_sonar_session_id';
+        hidden.name = 'frame_sonar_session_id';
+        form.appendChild(hidden);
+      }
+
+      hidden.value = sessionId;
+    } catch (e) {
+      if (window.console && console.error) {
+        console.error('[Frame] Error capturing Sonar session ID:', e);
+      }
+    }
+  }
+
   function setHidden(valueObj) {
     let hidden =
       document.getElementById('frame_payment_method_data') ||
@@ -99,6 +131,7 @@
   }
 
   function boot() {
+    captureSonarSessionId(); // Capture session ID early
     mountCard();
     bindSubmitGuard();
   }
@@ -107,6 +140,8 @@
 
   // Remount after Woo refreshes checkout fragments
   $(document.body).on('updated_checkout wc-credit-card-form-init', () => {
+    captureSonarSessionId(); // Re-capture after WooCommerce updates DOM
+
     // If Woo replaced the node, reset mounted flag so we can mount again
     const container = document.querySelector('#frame-card');
     if (container && container.dataset.mounted !== '1') {

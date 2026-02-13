@@ -247,18 +247,23 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 'site_url'        => home_url(),
             ];
 
-            wc_get_logger()->info('[Frame WC] create payload: ' . wp_json_encode([
-                'amount'    => $amount,
-                'currency'  => $currency,
-                'metadata'  => $metadata,
-                'email'     => $billing['email'] ?? null,
-                'name'      => $name,
-            ]), ['source' => 'frame-payments-for-woocommerce']);
-
             // Read JSON payload without touching $_POST directly (appeases WP sniffers).
             $raw_json = filter_input( INPUT_POST, 'frame_payment_method_data', FILTER_UNSAFE_RAW );
             $raw_json = is_string( $raw_json ) ? wp_unslash( $raw_json ) : '';
             $cardData = is_string( $raw_json ) ? json_decode( $raw_json, true ) : null;
+
+            // Retrieve Sonar session ID from hidden input
+            $sonar_session_id = filter_input( INPUT_POST, 'frame_sonar_session_id', FILTER_UNSAFE_RAW );
+            $sonar_session_id = is_string( $sonar_session_id ) ? sanitize_text_field( wp_unslash( $sonar_session_id ) ) : '';
+
+            wc_get_logger()->info('[Frame WC] create payload: ' . wp_json_encode([
+                'amount'            => $amount,
+                'currency'          => $currency,
+                'metadata'          => $metadata,
+                'email'             => $billing['email'] ?? null,
+                'name'              => $name,
+                'sonar_session_id'  => $sonar_session_id,
+            ]), ['source' => 'frame-payments-for-woocommerce']);
 
             // Validate shape, then sanitize each field we actually use.
             $cardNumber = isset($cardData['number']) ? sanitize_text_field( $cardData['number'] ) : '';
@@ -321,13 +326,14 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 /* translators: 1: WooCommerce order ID */
                 description:       sprintf('WooCommerce Order #%1$d', $order->get_id()),
                 customer:          null,
-                paymentMethod:     null, 
+                paymentMethod:     null,
                 confirm:           true,
                 receiptEmail:      $email ?: null,
                 paymentMethodData: $pmData,
                 customerData:      $customerData,
                 metadata:          $metadata,
-                authorizationMode: null
+                authorizationMode: null,
+                sonarSessionId:    $sonar_session_id ?: null
             );
 
             try {

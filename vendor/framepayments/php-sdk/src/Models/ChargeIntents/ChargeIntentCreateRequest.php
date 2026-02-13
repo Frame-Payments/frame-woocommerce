@@ -21,6 +21,7 @@ final class ChargeIntentCreateRequest implements \JsonSerializable
         /** @var array<string,string>|null */
         public readonly ?array $metadata = null,
         public readonly ?AuthorizationMode $authorizationMode = null,
+        public readonly ?string $sonarSessionId = null,
     ) {
         if ($this->amount <= 0) {
             throw new \InvalidArgumentException('amount must be > 0');
@@ -41,6 +42,7 @@ final class ChargeIntentCreateRequest implements \JsonSerializable
             'customer_data' => $this->customerData?->toArray(),
             'metadata' => $this->metadata,
             'authorization_mode' => $this->authorizationMode?->value,
+            'sonar_session_id' => $this->sonarSessionId,
         ];
 
         $filterNulls = fn ($v) => $v !== null;

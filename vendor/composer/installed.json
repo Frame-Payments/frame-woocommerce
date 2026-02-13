@@ -2,17 +2,17 @@
     "packages": [
         {
             "name": "framepayments/php-sdk",
-            "version": "v1.0.6",
-            "version_normalized": "1.0.6.0",
+            "version": "v1.0.7",
+            "version_normalized": "1.0.7.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Frame-Payments/frame-php.git",
-                "reference": "da3cd9ba922f3447b8d77ebb763b41636a054452"
+                "reference": "afe3dabf78238097327e76f125a9f1ed70b385c1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Frame-Payments/frame-php/zipball/da3cd9ba922f3447b8d77ebb763b41636a054452",
-                "reference": "da3cd9ba922f3447b8d77ebb763b41636a054452",
+                "url": "https://api.github.com/repos/Frame-Payments/frame-php/zipball/afe3dabf78238097327e76f125a9f1ed70b385c1",
+                "reference": "afe3dabf78238097327e76f125a9f1ed70b385c1",
                 "shasum": ""
             },
             "require": {
@@ -27,7 +27,7 @@
                 "phpstan/phpstan": "^1.11",
                 "phpunit/phpunit": "^10.5"
             },
-            "time": "2025-10-29T00:55:29+00:00",
+            "time": "2026-02-13T18:13:22+00:00",
             "type": "library",
             "installation-source": "dist",
             "autoload": {
@@ -42,7 +42,7 @@
             "description": "Frame Payments PHP SDK",
             "support": {
                 "issues": "https://github.com/Frame-Payments/frame-php/issues",
-                "source": "https://github.com/Frame-Payments/frame-php/tree/v1.0.6"
+                "source": "https://github.com/Frame-Payments/frame-php/tree/v1.0.7"
             },
             "install-path": "../framepayments/php-sdk"
         },
@@ -737,6 +737,6 @@
             "install-path": "../symfony/deprecation-contracts"
         }
     ],
-    "dev": false,
+    "dev": true,
     "dev-package-names": []
 }
