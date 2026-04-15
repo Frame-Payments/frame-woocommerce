@@ -9,10 +9,11 @@ final class ChargeIntentUpdateRequest implements \JsonSerializable
     public function __construct(
         public readonly ?int $amount,
         public readonly ?string $customer = null,
+        public readonly ?string $account = null,
         public readonly ?string $description = null,
         public readonly ?string $paymentMethod = null,
         /** @var array<string,string>|null */
-        public readonly ?array $metadata = null
+        public readonly ?array $metadata = null,
     ) {
     }
 
@@ -22,6 +23,7 @@ final class ChargeIntentUpdateRequest implements \JsonSerializable
             'amount' => $this->amount,
             'description' => $this->description,
             'customer' => $this->customer,
+            'account' => $this->account,
             'payment_method' => $this->paymentMethod,
             'metadata' => $this->metadata,
         ];

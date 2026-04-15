@@ -10,23 +10,24 @@ final class SubscriptionCreateRequest implements \JsonSerializable
         public readonly string $product,
         public readonly string $currency,
         public readonly string $customer,
-        public readonly string $defaultPaymentMethod,
+        public readonly ?string $account = null,
+        public readonly ?string $defaultPaymentMethod = null,
         public readonly ?string $description = null,
-        public readonly ?array $metadata = null
+        public readonly ?string $prorationBehavior = null,
+        public readonly ?array $metadata = null,
     ) {
-        if (strtolower($this->currency) !== 'usd') {
-            throw new \InvalidArgumentException('currency must be USD');
-        }
     }
 
     public function toArray(): array
     {
         $payload = [
             'customer' => $this->customer,
+            'account' => $this->account,
             'product' => $this->product,
             'description' => $this->description,
             'currency' => $this->currency,
             'default_payment_method' => $this->defaultPaymentMethod,
+            'proration_behavior' => $this->prorationBehavior,
             'metadata' => $this->metadata,
         ];
 

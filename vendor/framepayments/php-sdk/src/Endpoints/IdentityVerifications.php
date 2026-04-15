@@ -25,4 +25,9 @@ final class IdentityVerifications
 
         return CustomerIdentity::fromArray($json);
     }
+
+    public function uploadDocuments(string $id, array $params): array
+    {
+        return Client::post('/v1/customer_identity_verifications' . "/{$id}/upload_documents", $params);
+    }
 }

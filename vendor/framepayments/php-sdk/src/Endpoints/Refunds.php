@@ -34,10 +34,4 @@ final class Refunds
         return RefundListResponse::fromArray($json);
     }
 
-    public function cancel(string $id): Refund
-    {
-        $json = Client::post(self::BASE_PATH . "/{$id}/cancel", []);
-
-        return Refund::fromArray($json);
-    }
 }

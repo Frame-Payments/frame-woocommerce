@@ -12,6 +12,10 @@ final class PaymentCard implements \JsonSerializable
         public readonly string $expYear,
         public readonly ?string $currency,
         public readonly string $lastFour,
+        public readonly ?string $issuer,
+        public readonly ?string $segment,
+        public readonly ?string $type,
+        public readonly ?array $wallet,
     ) {
     }
 
@@ -22,7 +26,11 @@ final class PaymentCard implements \JsonSerializable
             expMonth: $p['exp_month'],
             expYear: $p['exp_year'],
             currency: $p['currency'] ?? null,
-            lastFour: $p['last_four']
+            lastFour: $p['last_four'],
+            issuer: $p['issuer'] ?? null,
+            segment: $p['segment'] ?? null,
+            type: $p['type'] ?? null,
+            wallet: isset($p['wallet']) && is_array($p['wallet']) ? $p['wallet'] : null,
         );
     }
 
@@ -34,6 +42,10 @@ final class PaymentCard implements \JsonSerializable
             'exp_year' => $this->expYear,
             'currency' => $this->currency,
             'last_four' => $this->lastFour,
+            'issuer' => $this->issuer,
+            'segment' => $this->segment,
+            'type' => $this->type,
+            'wallet' => $this->wallet,
         ];
     }
 }

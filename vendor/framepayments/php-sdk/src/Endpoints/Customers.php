@@ -10,6 +10,7 @@ use Frame\Models\Customers\CustomerCreateRequest;
 use Frame\Models\Customers\CustomerListResponse;
 use Frame\Models\Customers\CustomerSearchRequest;
 use Frame\Models\Customers\CustomerUpdateRequest;
+use Frame\Models\PaymentMethods\PaymentMethodListResponse;
 
 final class Customers
 {
@@ -69,5 +70,12 @@ final class Customers
         $json = Client::post(self::BASE_PATH . "/{$id}/unblock");
 
         return Customer::fromArray($json);
+    }
+
+    public function getPaymentMethods(string $id, int $perPage = 10, int $page = 1): PaymentMethodListResponse
+    {
+        $json = Client::get(self::BASE_PATH . "/{$id}/payment_methods", ['per_page' => $perPage, 'page' => $page]);
+
+        return PaymentMethodListResponse::fromArray($json);
     }
 }
