@@ -74,16 +74,26 @@ abstract class TestCase extends PHPUnitTestCase
             'id' => 'ci_test123',
             'currency' => 'usd',
             'amount' => 2000,
+            'amount_captured' => 0,
+            'amount_voided' => 0,
             'status' => 'incomplete',
             'description' => 'Test charge intent',
+            'failure_description' => null,
+            'authorization_mode' => null,
             'client_secret' => 'ci_test123_secret',
             'livemode' => false,
             'created' => 1640995200,
-            'updated' => 1640995200,
             'object' => 'charge_intent',
             'customer' => null,
+            'account' => null,
             'payment_method' => null,
             'shipping' => null,
+            'subscription' => null,
+            'invoice' => null,
+            'metadata' => null,
+            'latest_charge' => null,
+            'next_action' => null,
+            'revenue_split' => null,
         ];
     }
 
@@ -169,40 +179,22 @@ abstract class TestCase extends PHPUnitTestCase
     {
         return [
             'id' => 'dis_test123',
-            'amount' => 2000,
-            'charge' => 'char_123',
-            'currency' => 'usd',
-            'evidence' => $this->getSampleDisputeEvidenceData(),
-            'charge_intent' => 'char_intent123',
-            'reason' => 'fraudulent',
+            'amount_cents' => 2000,
+            'amount_currency' => 'usd',
+            'charge_intent' => null,
+            'reason' => [
+                'code' => 'fraudulent',
+                'description' => 'The cardholder claims they did not make this transaction.',
+                'category' => 'fraud',
+            ],
             'status' => 'under_review',
+            'display_status' => 'Under Review',
+            'acquirer_reference_number' => null,
+            'authorization_code' => null,
             'livemode' => false,
             'created' => 1640995200,
             'updated' => 1640995200,
             'object' => 'dispute',
-        ];
-    }
-
-    /**
-     * Helper method to get a sample dispute evidence data array
-     */
-    protected function getSampleDisputeEvidenceData(): array
-    {
-        return [
-            'access_activity_log' => null,
-            'billing_address' => null,
-            'cancellation_policy' => null,
-            'cancellation_policy_disclosure' => null,
-            'cancellation_rebuttal' => null,
-            'customer_email_address' => null,
-            'customer_name' => null,
-            'customer_purchase_ip' => null,
-            'duplicate_charge_explanation' => null,
-            'duplicate_charge_id' => null,
-            'product_description' => null,
-            'refund_policy_disclosure' => null,
-            'shipping_tracking_number' => null,
-            'uncategorized_text' => null,
         ];
     }
 
@@ -213,7 +205,8 @@ abstract class TestCase extends PHPUnitTestCase
     {
         return [
             'id' => 'method_123',
-            'customer' => null,
+            'customer_id' => null,
+            'account_id' => null,
             'billing' => $this->getSampleAddressData(),
             'type' => 'card',
             'livemode' => true,
@@ -237,6 +230,28 @@ abstract class TestCase extends PHPUnitTestCase
             'exp_year' => '30',
             'currency' => 'usd',
             'last_four' => '0000',
+            'issuer' => 'Chase',
+            'segment' => 'consumer',
+            'type' => 'debit',
+            'wallet' => null,
+        ];
+    }
+
+    /**
+     * Helper method to get a sample account-based onboarding session data array
+     */
+    protected function getSampleAccountOnboardingSessionData(): array
+    {
+        return [
+            'id' => 'acs_test123',
+            'account_id' => 'acct_test123',
+            'client_secret' => 'acs_test123_secret',
+            'return_url' => 'https://example.com/return',
+            'steps' => ['identity', 'banking'],
+            'expires_at' => 1640995200,
+            'url' => 'https://onboarding.framepayments.com/flow/abc123',
+            'livemode' => false,
+            'object' => 'onboarding_session',
         ];
     }
 
@@ -297,13 +312,68 @@ abstract class TestCase extends PHPUnitTestCase
             'currency' => 'usd',
             'status' => 'active',
             'customer' => 'cus_123',
+            'account' => null,
             'default_payment_method' => 'method_123',
+            'quantity' => null,
+            'phases' => [],
+            'has_phases' => false,
+            'current_phase' => null,
+            'effective_amount' => null,
+            'effective_interval' => null,
+            'effective_interval_count' => null,
+            'latest_charge_intent' => null,
             'metadata' => [],
             'start_date' => 1640995200,
             'created' => 1640995200,
             'object' => 'subscription',
             'plan' => null,
-          ];
+        ];
+    }
+
+    /**
+     * Helper method to get a sample account data array
+     */
+    protected function getSampleAccountData(): array
+    {
+        return [
+            'id' => 'acct_test123',
+            'type' => 'individual',
+            'status' => 'active',
+            'external_id' => null,
+            'metadata' => null,
+            'payout_payment_method_id' => null,
+            'terms_of_service' => null,
+            'profile' => null,
+            'capabilities' => [],
+            'steps' => [],
+            'created' => 1640995200,
+            'updated' => 1640995200,
+            'livemode' => false,
+            'object' => 'account',
+        ];
+    }
+
+    /**
+     * Helper method to get a sample end-user onboarding session data array
+     */
+    protected function getSampleOnboardingSessionData(): array
+    {
+        return [
+            'id' => 'os_test123',
+            'user_id' => null,
+            'customer_id' => 'cus_123',
+            'status' => 'in_progress',
+            'steps' => null,
+            'components' => null,
+            'entry_point' => null,
+            'metadata' => null,
+            'client_secret' => null,
+            'expires_at' => 1640995200,
+            'created_at' => 1640995200,
+            'updated_at' => 1640995200,
+            'completed_at' => null,
+            'object' => 'onboarding_session',
+        ];
     }
 
     /**

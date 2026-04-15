@@ -11,7 +11,8 @@ final class PaymentMethod implements \JsonSerializable
     public function __construct(
         public readonly string $id,
         public readonly ?string $customer,
-        public readonly Address $billing,
+        public readonly ?string $accountId,
+        public readonly ?Address $billing,
         public readonly ?PaymentMethodType $type,
         public readonly bool $livemode,
         public readonly int $created,
@@ -19,7 +20,7 @@ final class PaymentMethod implements \JsonSerializable
         public readonly string $object,
         public readonly ?PaymentMethodStatus $status,
         public readonly ?PaymentCard $card,
-        // public readonly ?string $ach
+        public readonly ?PaymentAch $ach,
     ) {
     }
 
@@ -43,16 +44,17 @@ final class PaymentMethod implements \JsonSerializable
 
         return new self(
             id: $p['id'],
-            customer: $p['customer'] ?? null,
-            billing: Address::fromArray($p['billing']),
+            customer: $p['customer_id'] ?? $p['customer'] ?? null,
+            accountId: $p['account_id'] ?? null,
+            billing: isset($p['billing']) && is_array($p['billing']) ? Address::fromArray($p['billing']) : null,
             type: $type,
             created: (int)$p['created'],
-            updated: (int)$p['updated'] ?? null,
+            updated: isset($p['updated']) ? (int)$p['updated'] : null,
             livemode: (bool)$p['livemode'],
             object: $p['object'],
             status: $status,
-            card: isset($p['card']) && is_array($p['card']) ? PaymentCard::fromArray($p['card']) : null
-            // ach: $p['ach'] ?? null
+            card: isset($p['card']) && is_array($p['card']) ? PaymentCard::fromArray($p['card']) : null,
+            ach: isset($p['ach']) && is_array($p['ach']) ? PaymentAch::fromArray($p['ach']) : null,
         );
     }
 
@@ -60,16 +62,17 @@ final class PaymentMethod implements \JsonSerializable
     {
         return [
             'id' => $this->id,
-            'customer' => $this->customer,
+            'customer_id' => $this->customer,
+            'account_id' => $this->accountId,
             'billing' => $this->billing,
-            'type' => $this->type->value,
+            'type' => $this->type?->value,
             'livemode' => $this->livemode,
             'created' => $this->created,
             'updated' => $this->updated,
             'object' => $this->object,
-            'status' => $this->status->value,
+            'status' => $this->status?->value,
             'card' => $this->card,
-            // 'ach' => $this->ach,
+            'ach' => $this->ach,
         ];
     }
 }

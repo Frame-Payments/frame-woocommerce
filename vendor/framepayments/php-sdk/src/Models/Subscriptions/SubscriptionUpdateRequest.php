@@ -9,6 +9,8 @@ final class SubscriptionUpdateRequest implements \JsonSerializable
     public function __construct(
         public readonly ?string $description = null,
         public readonly ?string $defaultPaymentMethod = null,
+        public readonly ?string $product = null,
+        public readonly ?string $updateInterval = null,
         public readonly ?array $metadata = null,
     ) {
     }
@@ -18,6 +20,8 @@ final class SubscriptionUpdateRequest implements \JsonSerializable
         $payload = [
             'description' => $this->description,
             'default_payment_method' => $this->defaultPaymentMethod,
+            'product' => $this->product,
+            'update_interval' => $this->updateInterval,
             'metadata' => $this->metadata,
         ];
 

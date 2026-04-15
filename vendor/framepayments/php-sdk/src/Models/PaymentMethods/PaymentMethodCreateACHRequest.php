@@ -14,7 +14,9 @@ final class PaymentMethodCreateACHRequest implements \JsonSerializable
         public readonly string $accountType,
         public readonly string $accountNumber,
         public readonly string $routingNumber,
-        public readonly ?Address $billing = null
+        public readonly ?string $bankName = null,
+        public readonly ?Address $billing = null,
+        public readonly ?string $account = null,
     ) {
     }
 
@@ -24,8 +26,10 @@ final class PaymentMethodCreateACHRequest implements \JsonSerializable
             'type' => $this->type->value,
             'account_type' => $this->accountType,
             'account_number' => $this->accountNumber,
+            'bank_name' => $this->bankName,
             'routing_number' => $this->routingNumber,
             'customer' => $this->customer,
+            'account' => $this->account,
             'billing' => $this->billing?->toArray(),
         ];
 

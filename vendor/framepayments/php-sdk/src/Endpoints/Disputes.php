@@ -25,4 +25,16 @@ final class Disputes
 
         return DisputeListResponse::fromArray($json);
     }
+
+    public function update(string $id, array $params): Dispute
+    {
+        $json = Client::update(self::BASE_PATH . "/{$id}", $params);
+
+        return Dispute::fromArray($json);
+    }
+
+    public function createDocument(string $id, array $params): array
+    {
+        return Client::post(self::BASE_PATH . "/{$id}/documents", $params);
+    }
 }
