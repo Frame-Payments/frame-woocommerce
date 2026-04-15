@@ -12,6 +12,9 @@
     const pk = cfg.getAttribute('data-pk');
     if (!pk) return null;
 
+    // Clear any stale session before re-initializing
+    localStorage.removeItem('frame_charge_session_id');
+
     frameInstance = await window.Frame.init(pk);
     return frameInstance;
   }
