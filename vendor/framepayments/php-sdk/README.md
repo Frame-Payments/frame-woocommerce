@@ -24,27 +24,37 @@ use Frame\Auth;
 Auth::setApiKey('YOUR_API_KEY');
 ```
 
-After setting the API key, you can use the `Client` class to make requests to the Frame API. The `Client` class has four methods: `create`, `get`, `update`, and `delete`. Each of these methods takes two parameters: the endpoint and an optional body.
-
-Here are some examples:
+After setting the API key, use the endpoint classes under the `Frame\Endpoints` namespace to interact with the API:
 
 ```php
-use Frame\Client;
+use Frame\Endpoints\Customers;
+use Frame\Endpoints\ChargeIntents;
+use Frame\Endpoints\Subscriptions;
 
-$create = Client::create('charges', [] /* body can be placed here */);
+// Create a customer
+$customers = new Customers();
+$customer = $customers->create([
+    'name'  => 'Alice Johnson',
+    'email' => 'alice@example.com',
+]);
 
-$get = Client::get('charges', [] /* body can be placed here */);
+// Create a charge intent
+$chargeIntents = new ChargeIntents();
+$intent = $chargeIntents->create([
+    'amount'         => 10000,
+    'currency'       => 'usd',
+    'customer'       => $customer['id'],
+    'payment_method' => 'pm_123456789',
+]);
+$chargeIntents->confirm($intent['id']);
 
-$update = Client::update('charges', [] /* body can be placed here */);
-
-$delete = Client::delete('charges', [] /* body can be placed here */);
-```
-
-By default, the response from these methods will be an object. If you want to get the response as an array, you can use the `toArray` method.
-
-```php
-$response = Frame\Client::get('charges');
-$arrayResponse = $response->toArray();
+// Create a subscription
+$subscriptions = new Subscriptions();
+$subscription = $subscriptions->create([
+    'customer'      => $customer['id'],
+    'product_phase' => 'pph_123456789',
+    'payment_method' => 'pm_123456789',
+]);
 ```
 
 ## Error Handling
@@ -52,9 +62,12 @@ $arrayResponse = $response->toArray();
 This SDK uses exceptions for error handling. If an error occurs during a request, an `Exception` will be thrown. You can catch these exceptions to handle errors in your application.
 
 ```php
+use Frame\Endpoints\Charges;
+
 try {
-    $response = Frame\Client::get('charges');
-} catch (Frame\Exception $e) {
+    $charges = new Charges();
+    $charge = $charges->retrieve('ch_123456789');
+} catch (\Exception $e) {
     echo 'Error: ' . $e->getMessage();
 }
 ```

@@ -82,19 +82,4 @@ class RefundsTest extends TestCase
         $this->assertInstanceOf(RefundListResponse::class, $response);
         $this->assertCount(1, $response->refunds);
     }
-
-    public function testCancel()
-    {
-        $refundId = 'ref_123';
-        $sampleRefundData = $this->getSampleRefundData();
-
-        $this->mockClient
-            ->shouldReceive('post')
-            ->once()
-            ->with("/v1/refunds/{$refundId}/cancel", [])
-            ->andReturn($sampleRefundData);
-
-        $refund = $this->refundsEndpoint->cancel($refundId);
-        $this->assertInstanceOf(Refund::class, $refund);
-    }
 }

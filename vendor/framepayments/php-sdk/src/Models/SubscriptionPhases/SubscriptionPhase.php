@@ -15,10 +15,13 @@ final class SubscriptionPhase implements \JsonSerializable
         public readonly string $currency,
         public readonly ?float $discountPercentage,
         public readonly ?int $periodCount,
+        public readonly ?string $phaseableType,
+        public readonly ?string $phaseableId,
+        public readonly ?int $startedAt,
         public readonly bool $livemode,
         public readonly int $created,
         public readonly int $updated,
-        public readonly string $object
+        public readonly string $object,
     ) {
     }
 
@@ -41,10 +44,13 @@ final class SubscriptionPhase implements \JsonSerializable
             currency: $p['currency'],
             discountPercentage: isset($p['discount_percentage']) ? (float)$p['discount_percentage'] : null,
             periodCount: isset($p['period_count']) ? (int)$p['period_count'] : null,
+            phaseableType: $p['phaseable_type'] ?? null,
+            phaseableId: $p['phaseable_id'] ?? null,
+            startedAt: isset($p['started_at']) ? (int)$p['started_at'] : null,
             livemode: (bool)$p['livemode'],
             created: (int)$p['created'],
             updated: (int)$p['updated'],
-            object: $p['object']
+            object: $p['object'],
         );
     }
 
@@ -59,6 +65,9 @@ final class SubscriptionPhase implements \JsonSerializable
             'currency' => $this->currency,
             'discount_percentage' => $this->discountPercentage,
             'period_count' => $this->periodCount,
+            'phaseable_type' => $this->phaseableType,
+            'phaseable_id' => $this->phaseableId,
+            'started_at' => $this->startedAt,
             'livemode' => $this->livemode,
             'created' => $this->created,
             'updated' => $this->updated,

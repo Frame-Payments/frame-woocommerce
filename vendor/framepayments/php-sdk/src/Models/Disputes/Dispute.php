@@ -4,21 +4,24 @@ declare(strict_types=1);
 
 namespace Frame\Models\Disputes;
 
+use Frame\Models\ChargeIntents\ChargeIntent;
+
 final class Dispute implements \JsonSerializable
 {
     public function __construct(
         public readonly string $id,
-        public readonly int $amount,
-        public readonly ?string $charge,
-        public readonly string $currency,
-        public readonly DisputeEvidence $evidence,
-        public readonly ?string $chargeIntent,
-        public readonly ?DisputeReason $reason,
+        public readonly int $amountCents,
+        public readonly string $amountCurrency,
+        public readonly ?ChargeIntent $chargeIntent,
+        public readonly ?array $reason,
         public readonly ?DisputeStatus $status,
+        public readonly ?string $displayStatus,
+        public readonly ?string $acquirerReferenceNumber,
+        public readonly ?string $authorizationCode,
         public readonly bool $livemode,
         public readonly int $created,
         public readonly int $updated,
-        public readonly string $object
+        public readonly string $object,
     ) {
     }
 
@@ -32,27 +35,20 @@ final class Dispute implements \JsonSerializable
             }
         }
 
-        $reason = null;
-        if (isset($p['reason'])) {
-            $reason = DisputeReason::tryFrom($p['reason']);
-            if ($reason === null) {
-                error_log("Unexpected 'DisputeReason': " . $p['reason']);
-            }
-        }
-
         return new self(
             id: $p['id'],
-            amount: (int)$p['amount'],
-            charge: isset($p['charge']) ? $p['charge'] : null,
-            currency: $p['currency'],
-            evidence: isset($p['evidence']) && is_array($p['evidence']) ? DisputeEvidence::fromArray($p['evidence']) : [],
-            chargeIntent: isset($p['charge_intent']) ? $p['charge_intent'] : null,
-            reason: $reason,
+            amountCents: (int)($p['amount_cents'] ?? 0),
+            amountCurrency: $p['amount_currency'] ?? '',
+            chargeIntent: isset($p['charge_intent']) && is_array($p['charge_intent']) ? ChargeIntent::fromArray($p['charge_intent']) : null,
+            reason: isset($p['reason']) && is_array($p['reason']) ? $p['reason'] : null,
             status: $status,
+            displayStatus: $p['display_status'] ?? null,
+            acquirerReferenceNumber: $p['acquirer_reference_number'] ?? null,
+            authorizationCode: $p['authorization_code'] ?? null,
             livemode: (bool)$p['livemode'],
             created: (int)$p['created'],
             updated: (int)$p['updated'],
-            object: $p['object']
+            object: $p['object'],
         );
     }
 
@@ -60,13 +56,14 @@ final class Dispute implements \JsonSerializable
     {
         return [
             'id' => $this->id,
-            'amount' => $this->amount,
-            'charge' => $this->charge,
-            'currency' => $this->currency,
-            'evidence' => $this->evidence,
+            'amount_cents' => $this->amountCents,
+            'amount_currency' => $this->amountCurrency,
             'charge_intent' => $this->chargeIntent,
-            'reason' => $this->reason->value,
-            'status' => $this->status->value,
+            'reason' => $this->reason,
+            'status' => $this->status?->value,
+            'display_status' => $this->displayStatus,
+            'acquirer_reference_number' => $this->acquirerReferenceNumber,
+            'authorization_code' => $this->authorizationCode,
             'livemode' => $this->livemode,
             'created' => $this->created,
             'updated' => $this->updated,

@@ -10,16 +10,18 @@ final class Product implements \JsonSerializable
         public readonly string $id,
         public readonly string $name,
         public readonly ?string $image,
-        public readonly string $description,
-        public readonly int $defaultPrice,
+        public readonly ?string $description,
+        public readonly ?int $defaultPrice,
         public readonly bool $shippable,
         public readonly bool $active,
         public readonly ?string $url,
+        public readonly ?string $purchaseType,
+        public readonly ?array $recurring,
         public readonly array $metadata,
         public readonly bool $livemode,
         public readonly int $created,
         public readonly int $updated,
-        public readonly string $object
+        public readonly string $object,
     ) {
     }
 
@@ -29,16 +31,18 @@ final class Product implements \JsonSerializable
             id: $p['id'],
             name: $p['name'],
             image: $p['image'] ?? null,
-            description: $p['description'],
-            defaultPrice: $p['default_price'],
+            description: $p['description'] ?? null,
+            defaultPrice: isset($p['default_price']) ? (int)$p['default_price'] : null,
             shippable: (bool)$p['shippable'],
             active: (bool)$p['active'],
             url: $p['url'] ?? null,
+            purchaseType: $p['purchase_type'] ?? null,
+            recurring: isset($p['recurring']) && is_array($p['recurring']) ? $p['recurring'] : null,
             metadata: isset($p['metadata']) && is_array($p['metadata']) ? $p['metadata'] : [],
             livemode: (bool)$p['livemode'],
             created: (int)$p['created'],
             updated: (int)$p['updated'],
-            object: $p['object']
+            object: $p['object'],
         );
     }
 
@@ -53,6 +57,8 @@ final class Product implements \JsonSerializable
             'shippable' => $this->shippable,
             'active' => $this->active,
             'url' => $this->url,
+            'purchase_type' => $this->purchaseType,
+            'recurring' => $this->recurring,
             'metadata' => $this->metadata,
             'livemode' => $this->livemode,
             'created' => $this->created,

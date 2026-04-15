@@ -15,7 +15,8 @@ final class PaymentMethodCreateCardRequest implements \JsonSerializable
         public readonly string $expMonth,
         public readonly string $expYear,
         public readonly string $cvc,
-        public readonly ?Address $billing = null
+        public readonly ?Address $billing = null,
+        public readonly ?string $account = null,
     ) {
     }
 
@@ -28,6 +29,7 @@ final class PaymentMethodCreateCardRequest implements \JsonSerializable
             'exp_year' => $this->expYear,
             'cvc' => $this->cvc,
             'customer' => $this->customer,
+            'account' => $this->account,
             'billing' => $this->billing?->toArray(),
         ];
 
