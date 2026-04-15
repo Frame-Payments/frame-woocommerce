@@ -306,6 +306,24 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 country:    $billing['country'] ?? null,
             );
 
+            $shipping_data = $order->get_address('shipping');
+            $shipping_address = null;
+            if (!empty(array_filter([
+                $shipping_data['address_1'] ?? '',
+                $shipping_data['city'] ?? '',
+                $shipping_data['postcode'] ?? '',
+                $shipping_data['country'] ?? '',
+            ]))) {
+                $shipping_address = new Address(
+                    line1:      $shipping_data['address_1'] ?? null,
+                    line2:      $shipping_data['address_2'] ?? null,
+                    city:       $shipping_data['city'] ?? null,
+                    state:      $shipping_data['state'] ?? null,
+                    postalCode: $shipping_data['postcode'] ?? null,
+                    country:    $shipping_data['country'] ?? null,
+                );
+            }
+
             $pmData = new PaymentMethodData(
                 type:       PaymentMethodType::CARD,
                 cardNumber: $cardNumber ?? null,
@@ -333,7 +351,8 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 customerData:      $customerData,
                 metadata:          $metadata,
                 authorizationMode: null,
-                sonarSessionId:    $sonar_session_id ?: null
+                sonarSessionId:    $sonar_session_id ?: null,
+                shipping:          $shipping_address,
             );
 
             try {
