@@ -2,17 +2,17 @@
     "packages": [
         {
             "name": "framepayments/php-sdk",
-            "version": "v1.0.9",
-            "version_normalized": "1.0.9.0",
+            "version": "v1.0.10",
+            "version_normalized": "1.0.10.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Frame-Payments/frame-php.git",
-                "reference": "55cb6ee03c44179be4333c6338ebc81db419768e"
+                "reference": "569b0542b54ab495b97fe73962a6bf22fc6ebcd0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Frame-Payments/frame-php/zipball/55cb6ee03c44179be4333c6338ebc81db419768e",
-                "reference": "55cb6ee03c44179be4333c6338ebc81db419768e",
+                "url": "https://api.github.com/repos/Frame-Payments/frame-php/zipball/569b0542b54ab495b97fe73962a6bf22fc6ebcd0",
+                "reference": "569b0542b54ab495b97fe73962a6bf22fc6ebcd0",
                 "shasum": ""
             },
             "require": {
@@ -27,7 +27,7 @@
                 "phpstan/phpstan": "^1.11",
                 "phpunit/phpunit": "^10.5"
             },
-            "time": "2026-04-15T17:36:55+00:00",
+            "time": "2026-05-19T18:53:35+00:00",
             "type": "library",
             "installation-source": "dist",
             "autoload": {
@@ -42,7 +42,7 @@
             "description": "Frame Payments PHP SDK",
             "support": {
                 "issues": "https://github.com/Frame-Payments/frame-php/issues",
-                "source": "https://github.com/Frame-Payments/frame-php/tree/v1.0.9"
+                "source": "https://github.com/Frame-Payments/frame-php/tree/v1.0.10"
             },
             "install-path": "../framepayments/php-sdk"
         },

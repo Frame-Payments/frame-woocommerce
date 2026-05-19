@@ -119,6 +119,39 @@
   display: none !important;
 }
 
+/* === HIDE NATIVE WOO FIELDS WHEN FRAME COLLECTS THEM ===
+   Body classes are emitted by Frame_WC_Gateway::add_body_classes() and the
+   `frame-method-active` class is toggled from JS based on Woo's
+   payment_method_selected event. Inputs stay in the DOM (Woo still validates
+   them, JS still populates them) but are not visible to the user.
+
+   All rules below require BOTH:
+     - the per-feature collecting class (set when Frame is configured to
+       collect that data)
+     - frame-method-active (set when the customer has Frame as the selected
+       payment method) — so that switching to another gateway restores Woo's
+       native fields. */
+
+body.frame-method-active.frame-wc-collecting-billing #billing_address_1_field,
+body.frame-method-active.frame-wc-collecting-billing #billing_address_2_field,
+body.frame-method-active.frame-wc-collecting-billing #billing_city_field,
+body.frame-method-active.frame-wc-collecting-billing #billing_state_field,
+body.frame-method-active.frame-wc-collecting-billing #billing_postcode_field,
+body.frame-method-active.frame-wc-collecting-billing #billing_country_field,
+body.frame-method-active.frame-wc-collecting-billing #billing_company_field {
+  display: none !important;
+}
+
+body.frame-method-active.frame-wc-collecting-firstName #billing_first_name_field { display: none !important; }
+body.frame-method-active.frame-wc-collecting-lastName  #billing_last_name_field  { display: none !important; }
+body.frame-method-active.frame-wc-collecting-email     #billing_email_field      { display: none !important; }
+body.frame-method-active.frame-wc-collecting-phone     #billing_phone_field      { display: none !important; }
+
+/* If billing + both name fields are hidden, hide the empty section heading too. */
+body.frame-method-active.frame-wc-collecting-billing.frame-wc-collecting-firstName.frame-wc-collecting-lastName .woocommerce-billing-fields > h3 {
+  display: none !important;
+}
+
 /* === RESPONSIVE === */
 @media (max-width: 600px) {
   .payment_method_frame .frame-wc-box {

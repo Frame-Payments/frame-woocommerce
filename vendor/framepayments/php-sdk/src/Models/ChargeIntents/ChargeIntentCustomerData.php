@@ -9,6 +9,7 @@ final class ChargeIntentCustomerData implements \JsonSerializable
     public function __construct(
         public readonly string $name,
         public readonly string $email,
+        public readonly ?string $phone = null,
     ) {
     }
 
@@ -17,6 +18,7 @@ final class ChargeIntentCustomerData implements \JsonSerializable
         return new self(
             name: $p['name'],
             email: $p['email'],
+            phone: $p['phone'] ?? null,
         );
     }
 
@@ -25,6 +27,7 @@ final class ChargeIntentCustomerData implements \JsonSerializable
         return [
             'name' => $this->name,
             'email' => $this->email,
+            'phone' => $this->phone,
         ];
     }
 
