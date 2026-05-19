@@ -16,13 +16,10 @@ use Frame\Models\Refunds\RefundReason;
 
 class Frame_WC_Gateway extends WC_Payment_Gateway {
 
-    protected $client;
-
     public function __construct() {
         $this->id = 'frame';
         $this->method_title = __('Frame', 'frame-payments-for-woocommerce');
         $this->method_description = __('Accept payments via Frame.', 'frame-payments-for-woocommerce');
-        // $this->icon = FRAME_WC_URL . 'assets/img/frame-logo.png';
         $this->has_fields = true;
 
         $this->init_form_fields();
@@ -46,8 +43,8 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
         add_action('woocommerce_thankyou_' . $this->id, [$this, 'handle_return'], 10, 1);
 
         add_filter('woocommerce_order_actions', [ $this, 'register_order_actions' ], 20, 1 );
-        add_action('woocommerce_order_action_frame_capture', [ $this, 'admin_capture' ] );
-        add_action('woocommerce_order_action_frame_void',    [ $this, 'admin_void' ] );
+        add_action('woocommerce_order_action_frame_capture', [ $this, 'order_action_capture' ] );
+        add_action('woocommerce_order_action_frame_void',    [ $this, 'order_action_void' ] );
         add_action('woocommerce_order_action_frame_refund',  [ $this, 'admin_refund' ] );
         add_action('woocommerce_api_frame_webhook', [ $this, 'handle_webhook' ]);
     }
@@ -71,12 +68,6 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 'type'        => 'text',
                 'description' => __('Shown at checkout', 'frame-payments-for-woocommerce'),
                 'default'     => __('Frame', 'frame-payments-for-woocommerce'),
-            ],
-            'test_mode' => [
-                'title'       => __('Test mode', 'frame-payments-for-woocommerce'),
-                'type'        => 'checkbox',
-                'label'       => __('Use Frame test keys', 'frame-payments-for-woocommerce'),
-                'default'     => 'yes',
             ],
             'public_key' => [
                 'title'       => __('Public Key', 'frame-payments-for-woocommerce'),

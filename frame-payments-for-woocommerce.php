@@ -78,14 +78,6 @@ add_action('before_woocommerce_init', function () {
     }
 });
 
-// add_action('plugins_loaded', function () {
-//     load_plugin_textdomain(
-//         'frame-payments-for-woocommerce',
-//         false,
-//         dirname(plugin_basename(__FILE__)) . '/languages'
-//     );
-// });
-
 /** -------------------------------------------------------
  * Frontend assets (Frame.js loads site-wide for Sonar)
  * ------------------------------------------------------ */
