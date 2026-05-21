@@ -5,13 +5,17 @@
  * and card-brand logos overlaid at the top-right.
  */
 
-/* Tweak positions/sizing of the brand logos here */
+/* Tweak sizing/position of the brand logos here.
+   Frame.js renders inside an iframe, so we can't position relative to the
+   internal Card Number field. These offsets pin the overlay to the right
+   edge of the Card Number input row by approximating its position within
+   the iframe. Tune if Frame.js changes its internal layout. */
 :root{
-  --frame-brand-top: 32px;
-  --frame-brand-right: 16px;
-  --frame-brand-gap: 8px;
-  --frame-brand-height: 22px;
+  --frame-brand-gap: 6px;
+  --frame-brand-height: 15px;
   --frame-brand-opacity: .95;
+  --frame-brand-row-top: 110px;
+  --frame-brand-row-right: 16px;
 }
 
 /* Isolate gateway area */
@@ -32,7 +36,7 @@
   max-width: 640px;
 }
 
-/* A simple wrapper so brands can be absolutely positioned */
+/* Wrap is the positioning context for the brand overlay */
 .payment_method_frame .frame-card-wrap {
   position: relative;
   width: 100%;
@@ -42,19 +46,28 @@
 .payment_method_frame .frame-card-mount {
   display: block;
   width: 100%;
-  margin-bottom: 16px; /* space below the card field */
 }
 
-/* === BRAND LOGOS (overlay) === */
+/* === BRAND LOGOS (overlay on the Card Number input row) ===
+   Hidden until JS adds `.is-ready` on the wrap after Frame.js emits 'ready'
+   so the brands don't appear before the iframe form has finished rendering. */
 .payment_method_frame .frame-card-brands {
   position: absolute;
-  top: var(--frame-brand-top);
-  right: var(--frame-brand-right);
+  top: var(--frame-brand-row-top);
+  right: var(--frame-brand-row-right);
   display: flex;
   align-items: center;
   gap: var(--frame-brand-gap);
-  pointer-events: none; /* allow clicking/typing in the field underneath */
+  pointer-events: none; /* let typing/clicks pass to the input underneath */
   z-index: 3;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .2s ease;
+}
+
+.payment_method_frame .frame-card-wrap.is-ready .frame-card-brands {
+  opacity: 1;
+  visibility: visible;
 }
 
 .payment_method_frame .frame-card-brands img {
@@ -158,7 +171,8 @@ body.frame-method-active.frame-wc-collecting-billing.frame-wc-collecting-firstNa
     padding: 32px 20px;
   }
 
-  /* On very small screens, drop the overlay to a normal row */
+  /* On narrow screens drop the overlay into a normal row below the form
+     to avoid covering the input. */
   .payment_method_frame .frame-card-brands {
     position: static;
     margin-top: 8px;

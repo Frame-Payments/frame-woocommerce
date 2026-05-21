@@ -332,6 +332,23 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 'site_url'        => home_url(),
             ];
 
+            // Attach cart/line-item detail. Frame's metadata field is
+            // <string,string>, so structured pieces are JSON-encoded.
+            // Currency stays unprefixed (lives at top level on the intent);
+            // all amounts here are in minor units (cents) to match.
+            $cart = $this->build_cart_metadata($order);
+            $metadata['cart_item_count']    = (string) $cart['item_count'];
+            $metadata['cart_subtotal']      = (string) $cart['cart_subtotal'];
+            $metadata['cart_tax']           = (string) $cart['cart_tax'];
+            $metadata['cart_shipping']      = (string) $cart['cart_shipping'];
+            $metadata['cart_discount']      = (string) $cart['cart_discount'];
+            if ( ! empty($cart['coupon_codes'])) {
+                $metadata['coupon_codes']   = implode(',', $cart['coupon_codes']);
+            }
+            if ( ! empty($cart['line_items'])) {
+                $metadata['line_items']     = wp_json_encode($cart['line_items']);
+            }
+
             // Read JSON payload without touching $_POST directly (appeases WP sniffers).
             $raw_json = filter_input( INPUT_POST, 'frame_payment_method_data', FILTER_UNSAFE_RAW );
             $raw_json = is_string( $raw_json ) ? wp_unslash( $raw_json ) : '';
@@ -858,6 +875,64 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             return $digits;
         }
         return '+' . $cc_digits . $digits;
+    }
+
+    /**
+     * Build a structured line-items array from the WC_Order suitable for
+     * stashing on the ChargeIntent metadata (which is `array<string,string>`).
+     * Each item carries identity (product_id, variation_id, sku), display
+     * (name), quantity, totals, and category ids for downstream risk/reporting.
+     *
+     * Keeps the payload bounded: caps the per-item name length and the total
+     * number of items so we don't blow past Frame's metadata size limits.
+     */
+    private function build_cart_metadata(WC_Order $order): array {
+        $items = [];
+        $count = 0;
+        $max_items = 50;
+        $max_name_len = 80;
+
+        foreach ($order->get_items() as $item) {
+            if ($count >= $max_items) break;
+            if ( ! ($item instanceof WC_Order_Item_Product)) continue;
+
+            $product = $item->get_product();
+            $name = (string) $item->get_name();
+            if (strlen($name) > $max_name_len) {
+                $name = substr($name, 0, $max_name_len - 1) . '…';
+            }
+
+            $category_ids = [];
+            if ($product instanceof WC_Product) {
+                $cat = $product->get_category_ids();
+                if (is_array($cat)) {
+                    $category_ids = array_values(array_map('intval', $cat));
+                }
+            }
+
+            $items[] = [
+                'product_id'   => (int) $item->get_product_id(),
+                'variation_id' => (int) $item->get_variation_id(),
+                'sku'          => $product instanceof WC_Product ? (string) $product->get_sku() : '',
+                'name'         => $name,
+                'quantity'     => (int) $item->get_quantity(),
+                'subtotal'     => (int) round(((float) $item->get_subtotal()) * 100),
+                'total'        => (int) round(((float) $item->get_total()) * 100),
+                'category_ids' => $category_ids,
+            ];
+            $count++;
+        }
+
+        $coupons = $order->get_coupon_codes();
+        return [
+            'line_items'     => $items,
+            'item_count'     => (int) $order->get_item_count(),
+            'cart_subtotal'  => (int) round(((float) $order->get_subtotal()) * 100),
+            'cart_tax'       => (int) round(((float) $order->get_total_tax()) * 100),
+            'cart_shipping'  => (int) round(((float) $order->get_shipping_total()) * 100),
+            'cart_discount'  => (int) round(((float) $order->get_total_discount()) * 100),
+            'coupon_codes'   => is_array($coupons) ? array_values($coupons) : [],
+        ];
     }
 
     /**

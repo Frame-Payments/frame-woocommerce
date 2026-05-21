@@ -180,11 +180,25 @@
     const opts = {};
     const persisted = cfg.cardOptions || {};
 
+    // Frame.js renamed `themes()` -> `cardTheme()` and the option key
+    // `theme` -> `cardTheme`. The old names are deprecated-but-supported on
+    // newer bundles; older v1 builds only have the old names. Pick the
+    // canonical name when available, fall back when not.
     if (persisted.cardTheme && persisted.cardTheme.preset) {
       const themeArgs = persisted.cardTheme.styles
         ? [persisted.cardTheme.preset, { styles: persisted.cardTheme.styles }]
         : [persisted.cardTheme.preset];
-      opts.cardTheme = frame.cardTheme(...themeArgs);
+      const themeBuilder = typeof frame.cardTheme === 'function'
+        ? frame.cardTheme.bind(frame)
+        : (typeof frame.themes === 'function' ? frame.themes.bind(frame) : null);
+      if (themeBuilder) {
+        const themeObj = themeBuilder(...themeArgs);
+        // Newer bundles read `cardTheme`; older bundles read `theme`. Emit
+        // both — the destructure on the receiving side will pick whichever
+        // is non-undefined.
+        opts.cardTheme = themeObj;
+        opts.theme = themeObj;
+      }
     }
 
     if (Array.isArray(persisted.fields) && persisted.fields.length) {
@@ -219,10 +233,33 @@
       cardElement = null;
 
       const elementOptions = buildCreateElementOptions(frame, cfg);
-      cardElement = await frame.createElement('card', elementOptions);
+      try {
+        cardElement = await frame.createElement('card', elementOptions);
+      } catch (err) {
+        console.error('[Frame] createElement failed:', err, { elementOptions, cfg });
+        return;
+      }
 
-      await cardElement.mount(mountSelector);
+      const markReady = () => {
+        const wrap = document.querySelector(mountSelector)?.closest('.frame-card-wrap');
+        wrap?.classList.add('is-ready');
+      };
+
+      // Register the `ready` listener BEFORE mount so we don't miss an
+      // early dispatch. If `ready` never fires on this build, the
+      // post-mount fallback below still flips the class once mount()
+      // resolves (the iframe is functional by then).
+      cardElement.on('ready', markReady);
+      cardElement.on('error', (err) => console.error('[Frame] card element error:', err));
+
+      try {
+        await cardElement.mount(mountSelector);
+      } catch (err) {
+        console.error('[Frame] mount failed:', err, { mountSelector });
+        return;
+      }
       container.dataset.mounted = '1';
+      markReady();
 
       cardElement.on('complete', (payload) => {
         lastFramePayload = payload;
