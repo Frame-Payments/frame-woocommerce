@@ -319,7 +319,7 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             $cart = $this->build_cart_metadata($order);
             $metadata['cart_item_count']    = (string) $cart['item_count'];
             if ( ! empty($cart['coupon_codes'])) {
-                $metadata['coupon_codes']   = $this->fit_metadata_value(implode(',', $cart['coupon_codes']));
+                $metadata['coupon_codes']   = Frame_WC_Helpers::fit_metadata_value(implode(',', $cart['coupon_codes']));
             }
             if ( ! empty($cart['line_items'])) {
                 $metadata['line_items']     = $cart['line_items'];
@@ -341,24 +341,11 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             $sonar_session_id = is_string( $sonar_session_id ) ? sanitize_text_field( wp_unslash( $sonar_session_id ) ) : '';
 
             // Prefer Frame-collected identity values if the gateway is set to collect them via Frame.
-            // Frame.js emits the individual object in Accounts-API shape:
-            //   { email, name: { first_name, last_name }, phone: { number, country_code } }
             if ($this->is_collecting_identity() && $frameIndividual) {
-                $indName  = isset($frameIndividual['name'])  && is_array($frameIndividual['name'])  ? $frameIndividual['name']  : [];
-                $indPhone = isset($frameIndividual['phone']) && is_array($frameIndividual['phone']) ? $frameIndividual['phone'] : [];
-
-                $first = isset($indName['first_name']) ? sanitize_text_field((string) $indName['first_name']) : '';
-                $last  = isset($indName['last_name'])  ? sanitize_text_field((string) $indName['last_name'])  : '';
-                if ($first !== '' || $last !== '') {
-                    $name = trim($first . ' ' . $last);
-                }
-                if ( ! empty($frameIndividual['email']) ) {
-                    $email = sanitize_email((string) $frameIndividual['email']);
-                }
-                $frame_phone = $this->build_phone_from_individual($indPhone);
-                if ($frame_phone !== '') {
-                    $phone = $frame_phone;
-                }
+                $merged = Frame_WC_Helpers::merge_frame_identity($frameIndividual, $email, $name, $phone);
+                $email  = sanitize_email((string) $merged['email']);
+                $name   = sanitize_text_field((string) $merged['name']);
+                $phone  = sanitize_text_field((string) $merged['phone']);
             }
 
             wc_get_logger()->info('[Frame WC] create payload: ' . wp_json_encode([
@@ -698,53 +685,17 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
      * reconstructed on the JS side via frame.cardTheme(preset, { styles }).
      */
     public function build_card_options(): array {
-        $theme_preset = $this->get_option('card_theme', 'clean');
-
-        // The cardholder name is collected via the identity fields (First/Last
-        // name) rather than the in-iframe `name` field, so the card element
-        // only renders number/expiry/cvc.
-        $fields = ['number', 'expiry', 'cvc'];
-
-        $card_theme = [
-            'preset' => $theme_preset,
+        $settings = [
+            'card_theme'            => $this->get_option('card_theme', 'clean'),
+            'auto_focus'            => $this->get_option('auto_focus'),
+            'style_input_color'     => $this->get_option('style_input_color', ''),
+            'style_input_font_size' => $this->get_option('style_input_font_size', ''),
+            'identity_first_name'   => $this->get_option('identity_first_name', 'hidden'),
+            'identity_last_name'    => $this->get_option('identity_last_name', 'hidden'),
+            'identity_email'        => $this->get_option('identity_email', 'hidden'),
+            'identity_phone'        => $this->get_option('identity_phone', 'hidden'),
         ];
-
-        $input_styles = [];
-        $color = trim((string) $this->get_option('style_input_color', ''));
-        $size  = trim((string) $this->get_option('style_input_font_size', ''));
-        if ($color !== '') {
-            $input_styles['color'] = $color;
-        }
-        if ($size !== '') {
-            $input_styles['fontSize'] = $size;
-        }
-        if ( ! empty($input_styles) ) {
-            $card_theme['styles'] = ['input' => $input_styles];
-        }
-
-        $options = [
-            'cardTheme' => $card_theme,
-            'fields'    => $fields,
-            'autoFocus' => $this->get_option('auto_focus') === 'yes',
-        ];
-
-        $identity_fields = [];
-        foreach ($this->identity_field_map() as $option_key => $frame_key) {
-            $state = (string) $this->get_option($option_key, 'hidden');
-            if ($state === 'hidden') {
-                continue;
-            }
-            // identity_phone covers both phoneCountryCode and phoneNumber in Frame.
-            if ($frame_key === 'phone') {
-                $identity_fields['phoneCountryCode'] = ['show' => true, 'required' => $state === 'required'];
-                $identity_fields['phoneNumber']      = ['show' => true, 'required' => $state === 'required'];
-            } else {
-                $identity_fields[$frame_key] = ['show' => true, 'required' => $state === 'required'];
-            }
-        }
-        if ( ! empty($identity_fields) ) {
-            $options['identityFields'] = $identity_fields;
-        }
+        $options = Frame_WC_Helpers::build_card_options_from_settings($settings);
 
         /**
          * Filter the Frame.js card-element options before they are emitted to JS.
@@ -781,38 +732,6 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
     }
 
     /**
-     * Build an E.164-ish phone string from Frame's {number, country_code} shape.
-     * Mirrors the JS buildPhone() in frame-wc.js. Returns '' when nothing usable
-     * is present.
-     *
-     *  - ISO alpha-2 country code (e.g. "US"): we can't derive the dial code
-     *    server-side without a lookup table, so the digits alone are returned
-     *    and downstream systems can combine with the billing country.
-     *  - Bare dial code ("1") or "+"-prefixed dial code ("+1"): prepended to
-     *    the national digits.
-     */
-    private function build_phone_from_individual(array $phone): string {
-        $raw = isset($phone['number']) ? (string) $phone['number'] : '';
-        $digits = preg_replace('/[^0-9]/', '', $raw);
-        if ($digits === '' || $digits === null) {
-            return '';
-        }
-
-        $cc = isset($phone['country_code']) ? trim((string) $phone['country_code']) : '';
-        if ($cc === '') {
-            return $digits;
-        }
-        if (preg_match('/^[A-Za-z]{2}$/', $cc)) {
-            return $digits;
-        }
-        $cc_digits = preg_replace('/[^0-9]/', '', $cc);
-        if ($cc_digits === '' || $cc_digits === null) {
-            return $digits;
-        }
-        return '+' . $cc_digits . $digits;
-    }
-
-    /**
      * Build cart metadata for the ChargeIntent. Frame's metadata is
      * `array<string,string>` with a 100-char per-value cap; full line-item
      * detail won't fit, so we emit a compact "<pid>x<qty>,..." string
@@ -820,40 +739,21 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
      * Merchants can join back to the WC order via wc_order_id for full detail.
      */
     private function build_cart_metadata(WC_Order $order): array {
-        // Compact per-item encoding: "<product_id>x<qty>", or
-        // "<product_id>:<variation_id>x<qty>" for variations. Items are joined
-        // with commas and the whole string is truncated to fit Frame's 100-char
-        // metadata-value limit (lowest-index items are kept).
-        $parts = [];
+        $items = [];
         foreach ($order->get_items() as $item) {
             if ( ! ($item instanceof WC_Order_Item_Product)) continue;
-            $pid = (int) $item->get_product_id();
-            $vid = (int) $item->get_variation_id();
-            $qty = (int) $item->get_quantity();
-            $parts[] = $vid > 0 ? "{$pid}:{$vid}x{$qty}" : "{$pid}x{$qty}";
+            $items[] = [
+                'product_id'   => (int) $item->get_product_id(),
+                'variation_id' => (int) $item->get_variation_id(),
+                'quantity'     => (int) $item->get_quantity(),
+            ];
         }
-        $line_items = $this->fit_metadata_value(implode(',', $parts));
-
         $coupons = $order->get_coupon_codes();
         return [
-            'line_items'     => $line_items,
-            'item_count'     => (int) $order->get_item_count(),
-            'coupon_codes'   => is_array($coupons) ? array_values($coupons) : [],
+            'line_items'   => Frame_WC_Helpers::compress_line_items($items),
+            'item_count'   => (int) $order->get_item_count(),
+            'coupon_codes' => is_array($coupons) ? array_values($coupons) : [],
         ];
-    }
-
-    /**
-     * Truncate a metadata value to fit Frame's 100-char per-value limit.
-     * Cuts at the last comma boundary so we don't leave a half-encoded item.
-     */
-    private function fit_metadata_value(string $value): string {
-        $limit = 100;
-        if (strlen($value) <= $limit) {
-            return $value;
-        }
-        $truncated = substr($value, 0, $limit);
-        $last_comma = strrpos($truncated, ',');
-        return $last_comma !== false ? substr($truncated, 0, $last_comma) : $truncated;
     }
 
     /**

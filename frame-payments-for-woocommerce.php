@@ -145,7 +145,8 @@ add_action('wp_enqueue_scripts', function () {
  * Register the payment gateway after WooCommerce loads
  * ------------------------------------------------------ */
 add_action('woocommerce_loaded', function () {
-    // Load gateway class
+    // Load helpers + gateway class
+    require_once FRAME_WC_DIR . 'includes/class-frame-wc-helpers.php';
     require_once FRAME_WC_DIR . 'includes/class-wc-gateway-frame.php';
 
     // Register with WooCommerce

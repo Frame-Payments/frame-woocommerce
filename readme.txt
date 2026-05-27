@@ -50,7 +50,7 @@ The filter runs after the required-fields safeguard, so removing `number`, `expi
 == Installation ==
 
 1. Upload the plugin folder **frame-payments-for-woocommerce** to the `/wp-content/plugins/` directory, or install it via the Plugins → Add New screen.
-2. Run `composer install` inside the plugin directory to install the Frame PHP SDK.
+2. Run `composer install --no-dev` inside the plugin directory to install the Frame PHP SDK. (Requires Composer 2+ on the host.)
 3. Activate **Frame for WooCommerce** through the “Plugins” menu in WordPress.
 4. Go to **WooCommerce → Settings → Payments → Frame** and enter your Frame **Public** and **Secret** keys.
 5. (Optional) Set your **Webhook Secret** and point your Frame dashboard webhook to:
