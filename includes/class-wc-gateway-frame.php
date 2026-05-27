@@ -313,21 +313,16 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 'site_url'        => home_url(),
             ];
 
-            // Attach cart/line-item detail. Frame's metadata field is
-            // <string,string>, so structured pieces are JSON-encoded.
-            // Currency stays unprefixed (lives at top level on the intent);
-            // all amounts here are in minor units (cents) to match.
+            // Cart context. Frame's metadata is <string,string> with a 100-char
+            // per-value cap. Order totals live on the WC order itself and can be
+            // joined back via wc_order_id; we just send identifiers + line items.
             $cart = $this->build_cart_metadata($order);
             $metadata['cart_item_count']    = (string) $cart['item_count'];
-            $metadata['cart_subtotal']      = (string) $cart['cart_subtotal'];
-            $metadata['cart_tax']           = (string) $cart['cart_tax'];
-            $metadata['cart_shipping']      = (string) $cart['cart_shipping'];
-            $metadata['cart_discount']      = (string) $cart['cart_discount'];
             if ( ! empty($cart['coupon_codes'])) {
-                $metadata['coupon_codes']   = implode(',', $cart['coupon_codes']);
+                $metadata['coupon_codes']   = $this->fit_metadata_value(implode(',', $cart['coupon_codes']));
             }
             if ( ! empty($cart['line_items'])) {
-                $metadata['line_items']     = wp_json_encode($cart['line_items']);
+                $metadata['line_items']     = $cart['line_items'];
             }
 
             // Read JSON payload without touching $_POST directly (appeases WP sniffers).
@@ -346,16 +341,21 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             $sonar_session_id = is_string( $sonar_session_id ) ? sanitize_text_field( wp_unslash( $sonar_session_id ) ) : '';
 
             // Prefer Frame-collected identity values if the gateway is set to collect them via Frame.
+            // Frame.js emits the individual object in Accounts-API shape:
+            //   { email, name: { first_name, last_name }, phone: { number, country_code } }
             if ($this->is_collecting_identity() && $frameIndividual) {
-                $first = isset($frameIndividual['firstName']) ? sanitize_text_field((string) $frameIndividual['firstName']) : '';
-                $last  = isset($frameIndividual['lastName'])  ? sanitize_text_field((string) $frameIndividual['lastName'])  : '';
+                $indName  = isset($frameIndividual['name'])  && is_array($frameIndividual['name'])  ? $frameIndividual['name']  : [];
+                $indPhone = isset($frameIndividual['phone']) && is_array($frameIndividual['phone']) ? $frameIndividual['phone'] : [];
+
+                $first = isset($indName['first_name']) ? sanitize_text_field((string) $indName['first_name']) : '';
+                $last  = isset($indName['last_name'])  ? sanitize_text_field((string) $indName['last_name'])  : '';
                 if ($first !== '' || $last !== '') {
                     $name = trim($first . ' ' . $last);
                 }
                 if ( ! empty($frameIndividual['email']) ) {
                     $email = sanitize_email((string) $frameIndividual['email']);
                 }
-                $frame_phone = $this->build_phone_from_individual($frameIndividual);
+                $frame_phone = $this->build_phone_from_individual($indPhone);
                 if ($frame_phone !== '') {
                     $phone = $frame_phone;
                 }
@@ -464,9 +464,9 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 $intent = (new ChargeIntents())->create($req);
             } catch (FrameException $e) {
                 wc_get_logger()->error(
-                    '[Frame WC] Frame API error: ' . $e->getMessage() .
-                    ' | status=' . (method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 'n/a') .
-                    ' | body=' . wp_json_encode(method_exists($e, 'getResponseBody') ? $e->getResponseBody() : null),
+                    '[Frame WC] Frame API error: ' . FrameException::getErrorMessage($e) .
+                    ' | code=' . $e->getCode() .
+                    ' | response=' . wp_json_encode($e->getResponse()),
                     ['source' => 'frame-payments-for-woocommerce']
                 );
                 wc_add_notice(__('Payment error: Frame API rejected the request. Check logs.', 'frame-payments-for-woocommerce'), 'error');
@@ -781,7 +781,7 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
     }
 
     /**
-     * Build an E.164-ish phone string from Frame's split {phoneCountryCode, phoneNumber}.
+     * Build an E.164-ish phone string from Frame's {number, country_code} shape.
      * Mirrors the JS buildPhone() in frame-wc.js. Returns '' when nothing usable
      * is present.
      *
@@ -791,14 +791,14 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
      *  - Bare dial code ("1") or "+"-prefixed dial code ("+1"): prepended to
      *    the national digits.
      */
-    private function build_phone_from_individual(array $individual): string {
-        $raw = isset($individual['phoneNumber']) ? (string) $individual['phoneNumber'] : '';
+    private function build_phone_from_individual(array $phone): string {
+        $raw = isset($phone['number']) ? (string) $phone['number'] : '';
         $digits = preg_replace('/[^0-9]/', '', $raw);
         if ($digits === '' || $digits === null) {
             return '';
         }
 
-        $cc = isset($individual['phoneCountryCode']) ? trim((string) $individual['phoneCountryCode']) : '';
+        $cc = isset($phone['country_code']) ? trim((string) $phone['country_code']) : '';
         if ($cc === '') {
             return $digits;
         }
@@ -813,61 +813,47 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
     }
 
     /**
-     * Build a structured line-items array from the WC_Order suitable for
-     * stashing on the ChargeIntent metadata (which is `array<string,string>`).
-     * Each item carries identity (product_id, variation_id, sku), display
-     * (name), quantity, totals, and category ids for downstream risk/reporting.
-     *
-     * Keeps the payload bounded: caps the per-item name length and the total
-     * number of items so we don't blow past Frame's metadata size limits.
+     * Build cart metadata for the ChargeIntent. Frame's metadata is
+     * `array<string,string>` with a 100-char per-value cap; full line-item
+     * detail won't fit, so we emit a compact "<pid>x<qty>,..." string
+     * (truncated at the last comma to fit) plus aggregate totals.
+     * Merchants can join back to the WC order via wc_order_id for full detail.
      */
     private function build_cart_metadata(WC_Order $order): array {
-        $items = [];
-        $count = 0;
-        $max_items = 50;
-        $max_name_len = 80;
-
+        // Compact per-item encoding: "<product_id>x<qty>", or
+        // "<product_id>:<variation_id>x<qty>" for variations. Items are joined
+        // with commas and the whole string is truncated to fit Frame's 100-char
+        // metadata-value limit (lowest-index items are kept).
+        $parts = [];
         foreach ($order->get_items() as $item) {
-            if ($count >= $max_items) break;
             if ( ! ($item instanceof WC_Order_Item_Product)) continue;
-
-            $product = $item->get_product();
-            $name = (string) $item->get_name();
-            if (strlen($name) > $max_name_len) {
-                $name = substr($name, 0, $max_name_len - 1) . '…';
-            }
-
-            $category_ids = [];
-            if ($product instanceof WC_Product) {
-                $cat = $product->get_category_ids();
-                if (is_array($cat)) {
-                    $category_ids = array_values(array_map('intval', $cat));
-                }
-            }
-
-            $items[] = [
-                'product_id'   => (int) $item->get_product_id(),
-                'variation_id' => (int) $item->get_variation_id(),
-                'sku'          => $product instanceof WC_Product ? (string) $product->get_sku() : '',
-                'name'         => $name,
-                'quantity'     => (int) $item->get_quantity(),
-                'subtotal'     => (int) round(((float) $item->get_subtotal()) * 100),
-                'total'        => (int) round(((float) $item->get_total()) * 100),
-                'category_ids' => $category_ids,
-            ];
-            $count++;
+            $pid = (int) $item->get_product_id();
+            $vid = (int) $item->get_variation_id();
+            $qty = (int) $item->get_quantity();
+            $parts[] = $vid > 0 ? "{$pid}:{$vid}x{$qty}" : "{$pid}x{$qty}";
         }
+        $line_items = $this->fit_metadata_value(implode(',', $parts));
 
         $coupons = $order->get_coupon_codes();
         return [
-            'line_items'     => $items,
+            'line_items'     => $line_items,
             'item_count'     => (int) $order->get_item_count(),
-            'cart_subtotal'  => (int) round(((float) $order->get_subtotal()) * 100),
-            'cart_tax'       => (int) round(((float) $order->get_total_tax()) * 100),
-            'cart_shipping'  => (int) round(((float) $order->get_shipping_total()) * 100),
-            'cart_discount'  => (int) round(((float) $order->get_total_discount()) * 100),
             'coupon_codes'   => is_array($coupons) ? array_values($coupons) : [],
         ];
+    }
+
+    /**
+     * Truncate a metadata value to fit Frame's 100-char per-value limit.
+     * Cuts at the last comma boundary so we don't leave a half-encoded item.
+     */
+    private function fit_metadata_value(string $value): string {
+        $limit = 100;
+        if (strlen($value) <= $limit) {
+            return $value;
+        }
+        $truncated = substr($value, 0, $limit);
+        $last_comma = strrpos($truncated, ',');
+        return $last_comma !== false ? substr($truncated, 0, $last_comma) : $truncated;
     }
 
     /**

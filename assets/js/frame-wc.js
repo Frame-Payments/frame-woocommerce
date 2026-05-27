@@ -97,21 +97,20 @@
     };
   }
 
-  // C5: build an E.164-ish phone string from Frame's split payload.
-  // Frame's `phoneCountryCode` shape isn't documented exactly; handle the
-  // three plausible cases (ISO alpha-2, raw dial code, dial code with +).
-  function buildPhone(individual) {
-    if (!individual || !individual.phoneNumber) return null;
-    const digits = String(individual.phoneNumber).replace(/[^0-9]/g, '');
+  // Build an E.164-ish phone string from Frame's { number, country_code } shape.
+  // Frame.js emits country_code as either a dial code ("1", "+1") or an ISO
+  // alpha-2 ("US"); we can't derive dial codes from ISO alpha-2 without a
+  // lookup table, so in that case return national digits only.
+  function buildPhone(phone) {
+    if (!phone || !phone.number) return null;
+    const digits = String(phone.number).replace(/[^0-9]/g, '');
     if (!digits) return null;
 
-    const cc = individual.phoneCountryCode;
+    const cc = phone.country_code;
     if (!cc) return digits;
 
     const ccStr = String(cc).trim();
     if (/^[A-Za-z]{2}$/.test(ccStr)) {
-      // ISO alpha-2 — can't derive dial code locally; submit national-only
-      // and let downstream systems combine with billing_country.
       return digits;
     }
     const ccDigits = ccStr.replace(/[^0-9]/g, '');
@@ -139,12 +138,14 @@
       if (cfg.collectIdentity && framePayload.individual) {
         const shown = Array.isArray(cfg.identityShownFields) ? cfg.identityShownFields : [];
         const ind = framePayload.individual;
-        if (shown.includes('firstName')) setWoo('#billing_first_name', ind.firstName);
-        if (shown.includes('lastName'))  setWoo('#billing_last_name',  ind.lastName);
+        const name  = ind.name  || {};
+        const phone = ind.phone || {};
+        if (shown.includes('firstName')) setWoo('#billing_first_name', name.first_name);
+        if (shown.includes('lastName'))  setWoo('#billing_last_name',  name.last_name);
         if (shown.includes('email'))     setWoo('#billing_email',      ind.email);
         if (shown.includes('phone')) {
-          const phone = buildPhone(ind);
-          if (phone) setWoo('#billing_phone', phone);
+          const phoneStr = buildPhone(phone);
+          if (phoneStr) setWoo('#billing_phone', phoneStr);
         }
       }
     } finally {
