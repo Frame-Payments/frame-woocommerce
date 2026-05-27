@@ -1,5 +1,21 @@
 {
+    "name": "framepayments/frame-payments-for-woocommerce",
+    "description": "Frame for WooCommerce — gateway plugin.",
+    "type": "wordpress-plugin",
+    "license": "GPL-3.0-or-later",
     "require": {
         "framepayments/php-sdk": "^1.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "FrameWC\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test-coverage": "phpunit --coverage-html coverage"
     }
 }

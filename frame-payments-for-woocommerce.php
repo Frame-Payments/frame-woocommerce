@@ -3,7 +3,7 @@
  * Plugin Name: Frame for WooCommerce
  * Plugin URI:  https://github.com/Frame-Payments/frame-woocommerce
  * Description: Accept payments through Frame — secure, modern payment infrastructure for WooCommerce.
- * Version:     1.0.10
+ * Version:     1.0.12
  * Author:      Frame
  * Author URI:  https://framepayments.com/
  * License:     GPL-3.0-or-later
@@ -24,7 +24,7 @@ if (!defined('FRAME_WC_TD')) {
 /** -------------------------------------------------------
  * Core constants (define at top level, not inside a hook)
  * ------------------------------------------------------ */
-define('FRAME_WC_VERSION', '1.0.10');
+define('FRAME_WC_VERSION', '1.0.12');
 define('FRAME_WC_FILE', __FILE__);
 define('FRAME_WC_DIR', plugin_dir_path(__FILE__));
 define('FRAME_WC_URL', plugin_dir_url(__FILE__));
@@ -77,14 +77,6 @@ add_action('before_woocommerce_init', function () {
         \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('cart_checkout_blocks', FRAME_WC_FILE, true);
     }
 });
-
-// add_action('plugins_loaded', function () {
-//     load_plugin_textdomain(
-//         'frame-payments-for-woocommerce',
-//         false,
-//         dirname(plugin_basename(__FILE__)) . '/languages'
-//     );
-// });
 
 /** -------------------------------------------------------
  * Frontend assets (Frame.js loads site-wide for Sonar)
@@ -153,7 +145,8 @@ add_action('wp_enqueue_scripts', function () {
  * Register the payment gateway after WooCommerce loads
  * ------------------------------------------------------ */
 add_action('woocommerce_loaded', function () {
-    // Load gateway class
+    // Load helpers + gateway class
+    require_once FRAME_WC_DIR . 'includes/class-frame-wc-helpers.php';
     require_once FRAME_WC_DIR . 'includes/class-wc-gateway-frame.php';
 
     // Register with WooCommerce

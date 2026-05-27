@@ -1,40 +1,53 @@
 (function ($) {
+  const FRAME_GATEWAY_ID = 'frame';
+  const ACTIVE_BODY_CLASS = 'frame-method-active';
+
   let frameInstance = null;
   let cardElement = null;
+  let lastFramePayload = null;
 
-  async function initFrame() {
+  // C2: mount mutex. mountPromise is set whenever a mount is in flight so
+  // subsequent invocations can await the same operation instead of racing.
+  let mountPromise = null;
+
+  // C1: in-flight syncing flag so syncBillingToWoo doesn't recurse via
+  // updated_checkout when our own .trigger('change') causes Woo to refetch.
+  let isSyncing = false;
+  let syncDebounceTimer = null;
+
+  function readConfig() {
+    const node = document.querySelector('#frame-js-config');
+    if (!node) return null;
+    try {
+      return JSON.parse(node.textContent || '{}');
+    } catch (e) {
+      if (window.console && console.error) {
+        console.error('[Frame] Failed to parse #frame-js-config:', e);
+      }
+      return null;
+    }
+  }
+
+  async function initFrame(cfg) {
     if (frameInstance) return frameInstance;
     if (typeof window.Frame === 'undefined') return null;
-
-    const cfg = document.querySelector('#frame-js-config');
-    if (!cfg) return null;
-
-    const pk = cfg.getAttribute('data-pk');
-    if (!pk) return null;
-
-    // Clear any stale session before re-initializing
-    localStorage.removeItem('frame_charge_session_id');
-
-    frameInstance = await window.Frame.init(pk);
+    if (!cfg || !cfg.publicKey) return null;
+    // I1: do NOT clear frame_charge_session_id here. The site-wide
+    // Frame.init (enqueued by the plugin's main PHP file) already created
+    // the Sonar session; wiping it from the checkout JS would lose context
+    // collected since page load.
+    frameInstance = await window.Frame.init(cfg.publicKey);
     return frameInstance;
   }
 
   function captureSonarSessionId() {
     try {
-      // Frame.js automatically stores session ID here after Frame.init()
       const sessionId = localStorage.getItem('frame_charge_session_id');
-
-      if (!sessionId) {
-        return;
-      }
-
+      if (!sessionId) return;
       const form = document.querySelector('form.checkout');
-      if (!form) {
-        return;
-      }
+      if (!form) return;
 
       let hidden = document.getElementById('frame_sonar_session_id');
-
       if (!hidden) {
         hidden = document.createElement('input');
         hidden.type = 'hidden';
@@ -42,7 +55,6 @@
         hidden.name = 'frame_sonar_session_id';
         form.appendChild(hidden);
       }
-
       hidden.value = sessionId;
     } catch (e) {
       if (window.console && console.error) {
@@ -65,7 +77,7 @@
     hidden.value = valueObj ? JSON.stringify(valueObj) : '';
   }
 
-  function normalizeCardPayload(card) {
+  function normalizeCardFields(card) {
     if (!card) return null;
     return {
       number: card.number || null,
@@ -75,55 +87,184 @@
     };
   }
 
-  async function mountCard() {
-    // CHANGE THIS IF YOUR PHP OUTPUT USES A DIFFERENT ID
-    const mountSelector = '#frame-card';
-    const container = document.querySelector(mountSelector);
-    if (!container) return;
+  function buildPayload(framePayload) {
+    if (!framePayload) return null;
+    const cardFields = normalizeCardFields(framePayload.card);
+    if (!cardFields || !cardFields.number) return null;
+    return {
+      card: cardFields,
+      individual: framePayload.individual || null,
+    };
+  }
 
-    // If Woo refreshed the DOM, avoid double-mount
-    if (container.dataset.mounted === '1' && cardElement) return;
+  // Build an E.164-ish phone string from Frame's { number, country_code } shape.
+  // Frame.js emits country_code as either a dial code ("1", "+1") or an ISO
+  // alpha-2 ("US"); we can't derive dial codes from ISO alpha-2 without a
+  // lookup table, so in that case return national digits only.
+  function buildPhone(phone) {
+    if (!phone || !phone.number) return null;
+    const digits = String(phone.number).replace(/[^0-9]/g, '');
+    if (!digits) return null;
 
-    const frame = await initFrame();
-    if (!frame) return;
+    const cc = phone.country_code;
+    if (!cc) return digits;
 
-    // Clean up any old element
-    try { cardElement?.unmount?.(); } catch (e) {}
-    cardElement = null;
+    const ccStr = String(cc).trim();
+    if (/^[A-Za-z]{2}$/.test(ccStr)) {
+      return digits;
+    }
+    const ccDigits = ccStr.replace(/[^0-9]/g, '');
+    if (!ccDigits) return digits;
+    return `+${ccDigits}${digits}`;
+  }
 
-    cardElement = await frame.createElement('card', {
-      theme: frame.themes('clean'),
-    });
+  // C1+I7: write Frame-collected values into the corresponding Woo billing_*
+  // inputs. Gates per-field on cfg.identityShownFields so we don't clobber a
+  // value the merchant still expects the customer to enter in Woo's UI.
+  function performSync(framePayload, cfg) {
+    if (!framePayload) return;
+    if (isSyncing) return;
+    isSyncing = true;
+    try {
+      const setWoo = (selector, value, triggerChange) => {
+        const $el = $(selector);
+        if (!$el.length) return;
+        if (value === undefined || value === null || value === '') return;
+        if ($el.val() === String(value)) return;
+        $el.val(value);
+        if (triggerChange) $el.trigger('change');
+      };
 
-    await cardElement.mount(mountSelector);
-    container.dataset.mounted = '1';
-
-    // Keep hidden input synced – write FLAT shape
-    cardElement.on('complete', (payload) => {
-      const flat = normalizeCardPayload(payload?.card);
-      setHidden(flat);
-    });
-
-    // Also clear/update on change (in case user edits after completion)
-    cardElement.on('change', (payload) => {
-      if (!payload?.isComplete) {
-        setHidden(null);
-      } else {
-        const flat = normalizeCardPayload(payload?.card);
-        setHidden(flat);
+      if (cfg.collectIdentity && framePayload.individual) {
+        const shown = Array.isArray(cfg.identityShownFields) ? cfg.identityShownFields : [];
+        const ind = framePayload.individual;
+        const name  = ind.name  || {};
+        const phone = ind.phone || {};
+        if (shown.includes('firstName')) setWoo('#billing_first_name', name.first_name);
+        if (shown.includes('lastName'))  setWoo('#billing_last_name',  name.last_name);
+        if (shown.includes('email'))     setWoo('#billing_email',      ind.email);
+        if (shown.includes('phone')) {
+          const phoneStr = buildPhone(phone);
+          if (phoneStr) setWoo('#billing_phone', phoneStr);
+        }
       }
-    });
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  // C1: debounce syncs from the rapid-fire change event so we don't spam
+  // Woo's update_checkout AJAX on every keystroke. The trailing call also
+  // means the latest payload always wins.
+  function syncBillingToWoo(framePayload, cfg) {
+    if (!framePayload) return;
+    clearTimeout(syncDebounceTimer);
+    syncDebounceTimer = setTimeout(() => performSync(framePayload, cfg), 300);
+  }
+
+  function buildCreateElementOptions(frame, cfg) {
+    const opts = {};
+    const persisted = cfg.cardOptions || {};
+
+    if (persisted.cardTheme && persisted.cardTheme.preset) {
+      const themeArgs = persisted.cardTheme.styles
+        ? [persisted.cardTheme.preset, { styles: persisted.cardTheme.styles }]
+        : [persisted.cardTheme.preset];
+      opts.cardTheme = frame.cardTheme(...themeArgs);
+    }
+
+    if (Array.isArray(persisted.fields) && persisted.fields.length) {
+      opts.fields = persisted.fields;
+    }
+    if (persisted.autoFocus) opts.autoFocus = true;
+    if (persisted.billing)   opts.billing = true;
+    if (persisted.identityFields) opts.identityFields = persisted.identityFields;
+    if (persisted.translations)   opts.translations = persisted.translations;
+
+    return opts;
+  }
+
+  // C2: mountCard now returns/uses a shared promise so concurrent callers
+  // (boot + updated_checkout firing before the first mount resolves) all
+  // await the same operation rather than racing to createElement+mount.
+  function mountCard(cfg) {
+    if (mountPromise) return mountPromise;
+
+    mountPromise = (async () => {
+      const mountSelector = (cfg && cfg.mountSelector) || '#frame-card';
+      const container = document.querySelector(mountSelector);
+      if (!container) return;
+
+      if (container.dataset.mounted === '1' && cardElement) return;
+
+      const frame = await initFrame(cfg);
+      if (!frame) return;
+
+      // Clean up any old element before creating a new one.
+      try { cardElement?.unmount?.(); } catch (e) { /* noop */ }
+      cardElement = null;
+
+      const elementOptions = buildCreateElementOptions(frame, cfg);
+      try {
+        cardElement = await frame.createElement('card', elementOptions);
+      } catch (err) {
+        console.error('[Frame] createElement failed:', err, { elementOptions, cfg });
+        return;
+      }
+
+      const markReady = () => {
+        const wrap = document.querySelector(mountSelector)?.closest('.frame-card-wrap');
+        wrap?.classList.add('is-ready');
+      };
+
+      // Register the `ready` listener BEFORE mount so we don't miss an
+      // early dispatch. If `ready` never fires on this build, the
+      // post-mount fallback below still flips the class once mount()
+      // resolves (the iframe is functional by then).
+      cardElement.on('ready', markReady);
+      cardElement.on('error', (err) => console.error('[Frame] card element error:', err));
+
+      try {
+        await cardElement.mount(mountSelector);
+      } catch (err) {
+        console.error('[Frame] mount failed:', err, { mountSelector });
+        return;
+      }
+      container.dataset.mounted = '1';
+      markReady();
+
+      cardElement.on('complete', (payload) => {
+        lastFramePayload = payload;
+        setHidden(buildPayload(payload));
+        syncBillingToWoo(payload, cfg);
+      });
+
+      cardElement.on('change', (payload) => {
+        lastFramePayload = payload;
+        if (!payload?.isComplete) {
+          setHidden(null);
+          // C1: don't fan out to Woo from intermediate keystrokes; only
+          // sync once we have a complete (and therefore settled) payload.
+          return;
+        }
+        setHidden(buildPayload(payload));
+        syncBillingToWoo(payload, cfg);
+      });
+    })().finally(() => { mountPromise = null; });
+
+    return mountPromise;
   }
 
   function bindSubmitGuard() {
     const $form = $('form.checkout');
     if (!$form.length || $form.data('frame-guard-bound')) return;
-
     $form.data('frame-guard-bound', true);
 
     $form.on('checkout_place_order_frame', function () {
       const val = $('#frame_payment_method_data').val();
-      if (!val || val === '{}' || val === 'null') {
+      let parsed = null;
+      try { parsed = val ? JSON.parse(val) : null; } catch (e) { parsed = null; }
+      if (!parsed || !parsed.card || !parsed.card.number) {
         window.wc_checkout_form?.submit_error?.(
           '<ul class="woocommerce-error"><li>Please complete your card details.</li></ul>'
         );
@@ -133,23 +274,56 @@
     });
   }
 
+  // C3: toggle the body class that gates the "hide Woo billing fields"
+  // CSS rules. Only hide when Frame is the *selected* payment method, so
+  // switching to another gateway restores Woo's native billing fields.
+  function applyActiveBodyClass() {
+    const selected = $('input[name="payment_method"]:checked').val();
+    document.body.classList.toggle(ACTIVE_BODY_CLASS, selected === FRAME_GATEWAY_ID);
+  }
+
+  function bindPaymentMethodToggle() {
+    if ($(document.body).data('frame-pm-toggle-bound')) return;
+    $(document.body).data('frame-pm-toggle-bound', true);
+
+    // Cover both possible Woo events depending on theme/version.
+    $(document.body).on('payment_method_selected updated_checkout', applyActiveBodyClass);
+    // And direct user clicks, for themes that don't fire the events promptly.
+    $(document).on('change', 'input[name="payment_method"]', applyActiveBodyClass);
+  }
+
   function boot() {
-    captureSonarSessionId(); // Capture session ID early
-    mountCard();
+    const cfg = readConfig();
+    if (!cfg) return;
+    captureSonarSessionId();
+    bindPaymentMethodToggle();
+    applyActiveBodyClass();
+    mountCard(cfg);
     bindSubmitGuard();
   }
 
   $(boot);
 
-  // Remount after Woo refreshes checkout fragments
-  $(document.body).on('updated_checkout wc-credit-card-form-init', () => {
-    captureSonarSessionId(); // Re-capture after WooCommerce updates DOM
+  // Remount after Woo refreshes checkout fragments. The legacy
+  // `wc-credit-card-form-init` event is for Woo's built-in CC form and is
+  // not relevant to Frame's element, so it's not listened to here.
+  $(document.body).on('updated_checkout', () => {
+    const cfg = readConfig();
+    if (!cfg) return;
+    captureSonarSessionId();
+    applyActiveBodyClass();
 
-    // If Woo replaced the node, reset mounted flag so we can mount again
-    const container = document.querySelector('#frame-card');
+    const container = document.querySelector(cfg.mountSelector || '#frame-card');
     if (container && container.dataset.mounted !== '1') {
-      mountCard();
+      mountCard(cfg);
     }
     bindSubmitGuard();
+
+    // Re-sync the last known Frame values into the freshly-rendered Woo
+    // inputs. The isSyncing flag + debounce inside syncBillingToWoo prevent
+    // this from triggering another update_checkout loop.
+    if (lastFramePayload) {
+      syncBillingToWoo(lastFramePayload, cfg);
+    }
   });
 })(jQuery);

@@ -1,1 +1,13 @@
-/frame-payments-for-woocommerce/vendor
+# Dependencies — reproducible from composer.lock
+/vendor/
+
+# PHPUnit
+/.phpunit.cache/
+/.phpunit.result.cache
+/coverage/
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+*.swp

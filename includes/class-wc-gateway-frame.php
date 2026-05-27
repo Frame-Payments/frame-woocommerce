@@ -16,13 +16,10 @@ use Frame\Models\Refunds\RefundReason;
 
 class Frame_WC_Gateway extends WC_Payment_Gateway {
 
-    protected $client;
-
     public function __construct() {
         $this->id = 'frame';
         $this->method_title = __('Frame', 'frame-payments-for-woocommerce');
         $this->method_description = __('Accept payments via Frame.', 'frame-payments-for-woocommerce');
-        // $this->icon = FRAME_WC_URL . 'assets/img/frame-logo.png';
         $this->has_fields = true;
 
         $this->init_form_fields();
@@ -40,17 +37,25 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             Auth::setApiKey($this->secret_key);
         }
 
+        add_filter('body_class', [$this, 'add_body_classes']);
+
         add_action('woocommerce_update_options_payment_gateways_' . $this->id, [$this, 'process_admin_options']);
         add_action('woocommerce_thankyou_' . $this->id, [$this, 'handle_return'], 10, 1);
 
         add_filter('woocommerce_order_actions', [ $this, 'register_order_actions' ], 20, 1 );
-        add_action('woocommerce_order_action_frame_capture', [ $this, 'admin_capture' ] );
-        add_action('woocommerce_order_action_frame_void',    [ $this, 'admin_void' ] );
+        add_action('woocommerce_order_action_frame_capture', [ $this, 'order_action_capture' ] );
+        add_action('woocommerce_order_action_frame_void',    [ $this, 'order_action_void' ] );
         add_action('woocommerce_order_action_frame_refund',  [ $this, 'admin_refund' ] );
         add_action('woocommerce_api_frame_webhook', [ $this, 'handle_webhook' ]);
     }
 
     public function init_form_fields() {
+        $identity_choices = [
+            'hidden'   => __('Hidden', 'frame-payments-for-woocommerce'),
+            'optional' => __('Optional', 'frame-payments-for-woocommerce'),
+            'required' => __('Required', 'frame-payments-for-woocommerce'),
+        ];
+
         $this->form_fields = [
             'enabled' => [
                 'title'   => __('Enable/Disable', 'frame-payments-for-woocommerce'),
@@ -63,12 +68,6 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 'type'        => 'text',
                 'description' => __('Shown at checkout', 'frame-payments-for-woocommerce'),
                 'default'     => __('Frame', 'frame-payments-for-woocommerce'),
-            ],
-            'test_mode' => [
-                'title'       => __('Test mode', 'frame-payments-for-woocommerce'),
-                'type'        => 'checkbox',
-                'label'       => __('Use Frame test keys', 'frame-payments-for-woocommerce'),
-                'default'     => 'yes',
             ],
             'public_key' => [
                 'title'       => __('Public Key', 'frame-payments-for-woocommerce'),
@@ -84,6 +83,72 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 'title'       => __('Webhook Secret', 'frame-payments-for-woocommerce'),
                 'type'        => 'password',
                 'description' => __('If set, incoming webhook requests must include a valid signature.', 'frame-payments-for-woocommerce'),
+            ],
+
+            // --- Card element appearance ---
+            'card_element_section' => [
+                'title'       => __('Card element', 'frame-payments-for-woocommerce'),
+                'type'        => 'title',
+                'description' => __('Controls how the Frame.js card element is rendered at checkout.', 'frame-payments-for-woocommerce'),
+            ],
+            'card_theme' => [
+                'title'   => __('Theme', 'frame-payments-for-woocommerce'),
+                'type'    => 'select',
+                'default' => 'clean',
+                'options' => [
+                    'clean'    => __('Clean', 'frame-payments-for-woocommerce'),
+                    'minimal'  => __('Minimal', 'frame-payments-for-woocommerce'),
+                    'material' => __('Material', 'frame-payments-for-woocommerce'),
+                ],
+            ],
+            'auto_focus' => [
+                'title'   => __('Auto-focus', 'frame-payments-for-woocommerce'),
+                'type'    => 'checkbox',
+                'label'   => __('Focus the card element on page load', 'frame-payments-for-woocommerce'),
+                'default' => 'no',
+            ],
+            'style_input_color' => [
+                'title'       => __('Input text color', 'frame-payments-for-woocommerce'),
+                'type'        => 'text',
+                'description' => __('Optional. CSS color (e.g. #333333) applied to input text inside the card element.', 'frame-payments-for-woocommerce'),
+                'default'     => '',
+            ],
+            'style_input_font_size' => [
+                'title'       => __('Input font size', 'frame-payments-for-woocommerce'),
+                'type'        => 'text',
+                'description' => __('Optional. CSS font size (e.g. 16px) applied to input text inside the card element.', 'frame-payments-for-woocommerce'),
+                'default'     => '',
+            ],
+
+            // --- Billing & identity capture ---
+            'collect_section' => [
+                'title'       => __('Collect customer details via Frame', 'frame-payments-for-woocommerce'),
+                'type'        => 'title',
+                'description' => __('When enabled, WooCommerce\'s native fields for these values are hidden at checkout and Frame\'s element collects them instead.', 'frame-payments-for-woocommerce'),
+            ],
+            'identity_first_name' => [
+                'title'   => __('First name', 'frame-payments-for-woocommerce'),
+                'type'    => 'select',
+                'default' => 'hidden',
+                'options' => $identity_choices,
+            ],
+            'identity_last_name' => [
+                'title'   => __('Last name', 'frame-payments-for-woocommerce'),
+                'type'    => 'select',
+                'default' => 'hidden',
+                'options' => $identity_choices,
+            ],
+            'identity_email' => [
+                'title'   => __('Email', 'frame-payments-for-woocommerce'),
+                'type'    => 'select',
+                'default' => 'hidden',
+                'options' => $identity_choices,
+            ],
+            'identity_phone' => [
+                'title'   => __('Phone', 'frame-payments-for-woocommerce'),
+                'type'    => 'select',
+                'default' => 'hidden',
+                'options' => $identity_choices,
             ],
         ];
     }
@@ -241,27 +306,55 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             $billing = $order->get_address('billing');
             $email = $billing['email'] ?? '';
             $name  = trim(($billing['first_name'] ?? '') . ' ' . ($billing['last_name'] ?? ''));
+            $phone = $billing['phone'] ?? '';
             $metadata = [
                 'wc_order_id'     => (string) $order->get_id(),
                 'wc_order_key'    => $order->get_order_key(),
                 'site_url'        => home_url(),
             ];
 
+            // Cart context. Frame's metadata is <string,string> with a 100-char
+            // per-value cap. Order totals live on the WC order itself and can be
+            // joined back via wc_order_id; we just send identifiers + line items.
+            $cart = $this->build_cart_metadata($order);
+            $metadata['cart_item_count']    = (string) $cart['item_count'];
+            if ( ! empty($cart['coupon_codes'])) {
+                $metadata['coupon_codes']   = Frame_WC_Helpers::fit_metadata_value(implode(',', $cart['coupon_codes']));
+            }
+            if ( ! empty($cart['line_items'])) {
+                $metadata['line_items']     = $cart['line_items'];
+            }
+
             // Read JSON payload without touching $_POST directly (appeases WP sniffers).
             $raw_json = filter_input( INPUT_POST, 'frame_payment_method_data', FILTER_UNSAFE_RAW );
             $raw_json = is_string( $raw_json ) ? wp_unslash( $raw_json ) : '';
-            $cardData = is_string( $raw_json ) ? json_decode( $raw_json, true ) : null;
+            $payload  = is_string( $raw_json ) ? json_decode( $raw_json, true ) : null;
+            if ( ! is_array($payload) ) {
+                $payload = [];
+            }
+
+            $cardData        = isset($payload['card'])       && is_array($payload['card'])       ? $payload['card']       : [];
+            $frameIndividual = isset($payload['individual']) && is_array($payload['individual']) ? $payload['individual'] : null;
 
             // Retrieve Sonar session ID from hidden input
             $sonar_session_id = filter_input( INPUT_POST, 'frame_sonar_session_id', FILTER_UNSAFE_RAW );
             $sonar_session_id = is_string( $sonar_session_id ) ? sanitize_text_field( wp_unslash( $sonar_session_id ) ) : '';
 
+            // Prefer Frame-collected identity values if the gateway is set to collect them via Frame.
+            if ($this->is_collecting_identity() && $frameIndividual) {
+                $merged = Frame_WC_Helpers::merge_frame_identity($frameIndividual, $email, $name, $phone);
+                $email  = sanitize_email((string) $merged['email']);
+                $name   = sanitize_text_field((string) $merged['name']);
+                $phone  = sanitize_text_field((string) $merged['phone']);
+            }
+
             wc_get_logger()->info('[Frame WC] create payload: ' . wp_json_encode([
                 'amount'            => $amount,
                 'currency'          => $currency,
                 'metadata'          => $metadata,
-                'email'             => $billing['email'] ?? null,
+                'email'             => $email ?: ($billing['email'] ?? null),
                 'name'              => $name,
+                'has_phone'         => $phone !== '',
                 'sonar_session_id'  => $sonar_session_id,
             ]), ['source' => 'frame-payments-for-woocommerce']);
 
@@ -269,18 +362,8 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             $cardNumber = isset($cardData['number']) ? sanitize_text_field( $cardData['number'] ) : '';
             $cvc        = isset($cardData['cvc']) ? sanitize_text_field( $cardData['cvc'] ) : '';
 
-            $expMonth = '';
-            $expYear  = '';
-
-            // prefer nested if present
-            if (isset($cardData['expiry']) && is_array($cardData['expiry'])) {
-                $expMonth = (string) ($cardData['expiry']['month'] ?? '');
-                $expYear  = (string) ($cardData['expiry']['year']  ?? '');
-            }
-
-            // fallback to flat keys (your current payload)
-            if ($expMonth === '' && isset($cardData['exp_month'])) $expMonth = (string) $cardData['exp_month'];
-            if ($expYear  === '' && isset($cardData['exp_year']))  $expYear  = (string) $cardData['exp_year'];
+            $expMonth = isset($cardData['exp_month']) ? (string) $cardData['exp_month'] : '';
+            $expYear  = isset($cardData['exp_year'])  ? (string) $cardData['exp_year']  : '';
 
 
             if (
@@ -289,13 +372,21 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 empty($expYear)    ||
                 empty($cvc)
             ) {
+                // Redact PAN/CVC; only log which fields were present and the shape.
+                $redacted = [
+                    'has_number'    => $cardNumber !== '',
+                    'has_cvc'       => $cvc !== '',
+                    'has_exp_month' => $expMonth !== '',
+                    'has_exp_year'  => $expYear !== '',
+                    'keys'          => is_array($cardData) ? array_keys($cardData) : [],
+                ];
                 wc_get_logger()->error(
-                    '[Frame WC] Missing/incomplete cardData: ' . wp_json_encode( $cardData ),
+                    '[Frame WC] Missing/incomplete cardData: ' . wp_json_encode( $redacted ),
                     ['source' => 'frame-payments-for-woocommerce']
                 );
                 wc_add_notice( __( 'Please complete your card details.', 'frame-payments-for-woocommerce' ), 'error' );
                 return ['result' => 'failure'];
-            } 
+            }
 
             $address = new Address(
                 line1:      $billing['address_1'] ?? null,
@@ -336,6 +427,7 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             $customerData = new ChargeIntentCustomerData(
                 email: $email ?: null,
                 name:  $name  ?: null,
+                phone: $phone ?: null,
             );
 
             $req = new \Frame\Models\ChargeIntents\ChargeIntentCreateRequest(
@@ -359,9 +451,9 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 $intent = (new ChargeIntents())->create($req);
             } catch (FrameException $e) {
                 wc_get_logger()->error(
-                    '[Frame WC] Frame API error: ' . $e->getMessage() .
-                    ' | status=' . (method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 'n/a') .
-                    ' | body=' . wp_json_encode(method_exists($e, 'getResponseBody') ? $e->getResponseBody() : null),
+                    '[Frame WC] Frame API error: ' . FrameException::getErrorMessage($e) .
+                    ' | code=' . $e->getCode() .
+                    ' | response=' . wp_json_encode($e->getResponse()),
                     ['source' => 'frame-payments-for-woocommerce']
                 );
                 wc_add_notice(__('Payment error: Frame API rejected the request. Check logs.', 'frame-payments-for-woocommerce'), 'error');
@@ -550,8 +642,18 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
     }
 
     public function payment_fields() {
-        // Publishable key for frame-js init
-        echo '<div id="frame-js-config" data-pk="' . esc_attr($this->public_key) . '"></div>';
+        $config = [
+            'publicKey'         => (string) $this->public_key,
+            'mountSelector'     => '#frame-card',
+            'cardOptions'       => $this->build_card_options(),
+            'collectIdentity'   => $this->is_collecting_identity(),
+            'identityShownFields' => $this->identity_shown_fields(),
+        ];
+
+        // Typed JSON config is safer than data-* attributes for nested options.
+        echo '<script type="application/json" id="frame-js-config">'
+            . wp_json_encode( $config )
+            . '</script>';
 
         // Payment form container
         echo '<div class="frame-wc-box">';
@@ -571,6 +673,117 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
 
         echo '<input type="hidden" name="frame_wc_nonce" value="' .
         esc_attr( wp_create_nonce( 'frame_wc_process' ) ) . '">';
+    }
+
+    /**
+     * Build the options array passed to frame.createElement('card', ...).
+     * Runs through the `frame_wc_card_element_options` filter so site
+     * developers can override anything the admin UI doesn't expose
+     * (e.g. translations).
+     *
+     * The cardTheme is persisted as plain data ({ preset, styles }) and
+     * reconstructed on the JS side via frame.cardTheme(preset, { styles }).
+     */
+    public function build_card_options(): array {
+        $settings = [
+            'card_theme'            => $this->get_option('card_theme', 'clean'),
+            'auto_focus'            => $this->get_option('auto_focus'),
+            'style_input_color'     => $this->get_option('style_input_color', ''),
+            'style_input_font_size' => $this->get_option('style_input_font_size', ''),
+            'identity_first_name'   => $this->get_option('identity_first_name', 'hidden'),
+            'identity_last_name'    => $this->get_option('identity_last_name', 'hidden'),
+            'identity_email'        => $this->get_option('identity_email', 'hidden'),
+            'identity_phone'        => $this->get_option('identity_phone', 'hidden'),
+        ];
+        $options = Frame_WC_Helpers::build_card_options_from_settings($settings);
+
+        /**
+         * Filter the Frame.js card-element options before they are emitted to JS.
+         *
+         * @param array              $options  Card element options.
+         * @param Frame_WC_Gateway   $gateway  The gateway instance.
+         */
+        return (array) apply_filters('frame_wc_card_element_options', $options, $this);
+    }
+
+    /** Map admin setting keys to Frame identityField keys. */
+    private function identity_field_map(): array {
+        return [
+            'identity_first_name' => 'firstName',
+            'identity_last_name'  => 'lastName',
+            'identity_email'      => 'email',
+            'identity_phone'      => 'phone',
+        ];
+    }
+
+    /** Which identity fields have a non-hidden setting (used to drive CSS hiding of Woo fields). */
+    private function identity_shown_fields(): array {
+        $shown = [];
+        foreach ($this->identity_field_map() as $option_key => $frame_key) {
+            if ($this->get_option($option_key, 'hidden') !== 'hidden') {
+                $shown[] = $frame_key;
+            }
+        }
+        return $shown;
+    }
+
+    public function is_collecting_identity(): bool {
+        return ! empty($this->identity_shown_fields());
+    }
+
+    /**
+     * Build cart metadata for the ChargeIntent. Frame's metadata is
+     * `array<string,string>` with a 100-char per-value cap; full line-item
+     * detail won't fit, so we emit a compact "<pid>x<qty>,..." string
+     * (truncated at the last comma to fit) plus aggregate totals.
+     * Merchants can join back to the WC order via wc_order_id for full detail.
+     */
+    private function build_cart_metadata(WC_Order $order): array {
+        $items = [];
+        foreach ($order->get_items() as $item) {
+            if ( ! ($item instanceof WC_Order_Item_Product)) continue;
+            $items[] = [
+                'product_id'   => (int) $item->get_product_id(),
+                'variation_id' => (int) $item->get_variation_id(),
+                'quantity'     => (int) $item->get_quantity(),
+            ];
+        }
+        $coupons = $order->get_coupon_codes();
+        return [
+            'line_items'   => Frame_WC_Helpers::compress_line_items($items),
+            'item_count'   => (int) $order->get_item_count(),
+            'coupon_codes' => is_array($coupons) ? array_values($coupons) : [],
+        ];
+    }
+
+    /**
+     * Toggle body classes on checkout when Frame is collecting billing/identity.
+     *
+     * The actual CSS rules also require `frame-method-active` so we don't hide
+     * native Woo billing fields when the customer has selected a different
+     * payment method. The active class is kept in sync from JS via Woo's
+     * `payment_method_selected` event; here we set the initial paint state
+     * based on the session's chosen_payment_method.
+     */
+    public function add_body_classes(array $classes): array {
+        if ( ! function_exists('is_checkout') || ! is_checkout() ) {
+            return $classes;
+        }
+        if ('yes' !== $this->enabled) {
+            return $classes;
+        }
+        foreach ($this->identity_shown_fields() as $frame_key) {
+            $classes[] = 'frame-wc-collecting-' . sanitize_html_class($frame_key);
+        }
+
+        // Initial-paint hint: is Frame the currently-chosen gateway?
+        if ( function_exists('WC') && WC() && WC()->session ) {
+            $chosen = WC()->session->get('chosen_payment_method');
+            if ( $chosen === $this->id ) {
+                $classes[] = 'frame-method-active';
+            }
+        }
+        return $classes;
     }
 
     public function validate_fields() {

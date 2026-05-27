@@ -5,13 +5,17 @@
  * and card-brand logos overlaid at the top-right.
  */
 
-/* Tweak positions/sizing of the brand logos here */
+/* Brand row is absolutely positioned inside the card wrap, anchored from the
+   BOTTOM of Frame's iframe. The bottom row (Expiry + CVC) is always present,
+   so the distance from the iframe's bottom edge up to the Card Number label
+   is stable regardless of how many identity/billing fields render above.
+   Tune --frame-brand-row-bottom if Frame.js changes its internal row spacing. */
 :root{
-  --frame-brand-top: 32px;
-  --frame-brand-right: 16px;
-  --frame-brand-gap: 8px;
-  --frame-brand-height: 22px;
+  --frame-brand-gap: 6px;
+  --frame-brand-height: 15px;
   --frame-brand-opacity: .95;
+  --frame-brand-row-bottom: 123px;
+  --frame-brand-row-right: 4px;
 }
 
 /* Isolate gateway area */
@@ -32,7 +36,7 @@
   max-width: 640px;
 }
 
-/* A simple wrapper so brands can be absolutely positioned */
+/* Positioning context for the brand overlay */
 .payment_method_frame .frame-card-wrap {
   position: relative;
   width: 100%;
@@ -42,19 +46,28 @@
 .payment_method_frame .frame-card-mount {
   display: block;
   width: 100%;
-  margin-bottom: 16px; /* space below the card field */
 }
 
-/* === BRAND LOGOS (overlay) === */
+/* Anchored from the bottom of the card wrap so additional fields above the
+   card (identity, billing) don't shift the overlay. Hidden until JS adds
+   `.is-ready` so the brands don't flash before the iframe is mounted. */
 .payment_method_frame .frame-card-brands {
   position: absolute;
-  top: var(--frame-brand-top);
-  right: var(--frame-brand-right);
+  bottom: var(--frame-brand-row-bottom);
+  right: var(--frame-brand-row-right);
   display: flex;
   align-items: center;
   gap: var(--frame-brand-gap);
-  pointer-events: none; /* allow clicking/typing in the field underneath */
+  pointer-events: none; /* let typing/clicks pass to the input underneath */
   z-index: 3;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .2s ease;
+}
+
+.payment_method_frame .frame-card-wrap.is-ready .frame-card-brands {
+  opacity: 1;
+  visibility: visible;
 }
 
 .payment_method_frame .frame-card-brands img {
@@ -119,17 +132,28 @@
   display: none !important;
 }
 
+/* === HIDE NATIVE WOO FIELDS WHEN FRAME COLLECTS THEM ===
+   Body classes are emitted by Frame_WC_Gateway::add_body_classes() and the
+   `frame-method-active` class is toggled from JS based on Woo's
+   payment_method_selected event. Inputs stay in the DOM (Woo still validates
+   them, JS still populates them) but are not visible to the user.
+
+   All rules below require BOTH:
+     - the per-feature collecting class (set when Frame is configured to
+       collect that data)
+     - frame-method-active (set when the customer has Frame as the selected
+       payment method) — so that switching to another gateway restores Woo's
+       native fields. */
+
+body.frame-method-active.frame-wc-collecting-firstName #billing_first_name_field { display: none !important; }
+body.frame-method-active.frame-wc-collecting-lastName  #billing_last_name_field  { display: none !important; }
+body.frame-method-active.frame-wc-collecting-email     #billing_email_field      { display: none !important; }
+body.frame-method-active.frame-wc-collecting-phone     #billing_phone_field      { display: none !important; }
+
 /* === RESPONSIVE === */
 @media (max-width: 600px) {
   .payment_method_frame .frame-wc-box {
     padding: 32px 20px;
-  }
-
-  /* On very small screens, drop the overlay to a normal row */
-  .payment_method_frame .frame-card-brands {
-    position: static;
-    margin-top: 8px;
-    justify-content: flex-start;
   }
 
   .payment_method_frame #place_order {
