@@ -93,7 +93,6 @@
     if (!cardFields || !cardFields.number) return null;
     return {
       card: cardFields,
-      billing_address: framePayload.billingAddress || null,
       individual: framePayload.individual || null,
     };
   }
@@ -137,20 +136,6 @@
         if (triggerChange) $el.trigger('change');
       };
 
-      if (cfg.collectBilling && framePayload.billingAddress) {
-        const ba = framePayload.billingAddress;
-        setWoo('#billing_address_1', ba.line1);
-        setWoo('#billing_address_2', ba.line2);
-        setWoo('#billing_city',       ba.city);
-        setWoo('#billing_postcode',   ba.postalCode);
-        // country/state changes drive tax recalculation — trigger change so
-        // Woo refetches shipping/tax. The .val() === current guard above
-        // suppresses redundant triggers; the isSyncing flag prevents recursion
-        // from the updated_checkout re-sync path.
-        setWoo('#billing_country',    ba.country, true);
-        setWoo('#billing_state',      ba.state, true);
-      }
-
       if (cfg.collectIdentity && framePayload.individual) {
         const shown = Array.isArray(cfg.identityShownFields) ? cfg.identityShownFields : [];
         const ind = framePayload.individual;
@@ -180,25 +165,11 @@
     const opts = {};
     const persisted = cfg.cardOptions || {};
 
-    // Frame.js renamed `themes()` -> `cardTheme()` and the option key
-    // `theme` -> `cardTheme`. The old names are deprecated-but-supported on
-    // newer bundles; older v1 builds only have the old names. Pick the
-    // canonical name when available, fall back when not.
     if (persisted.cardTheme && persisted.cardTheme.preset) {
       const themeArgs = persisted.cardTheme.styles
         ? [persisted.cardTheme.preset, { styles: persisted.cardTheme.styles }]
         : [persisted.cardTheme.preset];
-      const themeBuilder = typeof frame.cardTheme === 'function'
-        ? frame.cardTheme.bind(frame)
-        : (typeof frame.themes === 'function' ? frame.themes.bind(frame) : null);
-      if (themeBuilder) {
-        const themeObj = themeBuilder(...themeArgs);
-        // Newer bundles read `cardTheme`; older bundles read `theme`. Emit
-        // both — the destructure on the receiving side will pick whichever
-        // is non-undefined.
-        opts.cardTheme = themeObj;
-        opts.theme = themeObj;
-      }
+      opts.cardTheme = frame.cardTheme(...themeArgs);
     }
 
     if (Array.isArray(persisted.fields) && persisted.fields.length) {

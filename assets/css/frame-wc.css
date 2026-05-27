@@ -5,17 +5,17 @@
  * and card-brand logos overlaid at the top-right.
  */
 
-/* Tweak sizing/position of the brand logos here.
-   Frame.js renders inside an iframe, so we can't position relative to the
-   internal Card Number field. These offsets pin the overlay to the right
-   edge of the Card Number input row by approximating its position within
-   the iframe. Tune if Frame.js changes its internal layout. */
+/* Brand row is absolutely positioned inside the card wrap, anchored from the
+   BOTTOM of Frame's iframe. The bottom row (Expiry + CVC) is always present,
+   so the distance from the iframe's bottom edge up to the Card Number label
+   is stable regardless of how many identity/billing fields render above.
+   Tune --frame-brand-row-bottom if Frame.js changes its internal row spacing. */
 :root{
   --frame-brand-gap: 6px;
   --frame-brand-height: 15px;
   --frame-brand-opacity: .95;
-  --frame-brand-row-top: 110px;
-  --frame-brand-row-right: 16px;
+  --frame-brand-row-bottom: 123px;
+  --frame-brand-row-right: 4px;
 }
 
 /* Isolate gateway area */
@@ -36,7 +36,7 @@
   max-width: 640px;
 }
 
-/* Wrap is the positioning context for the brand overlay */
+/* Positioning context for the brand overlay */
 .payment_method_frame .frame-card-wrap {
   position: relative;
   width: 100%;
@@ -48,12 +48,12 @@
   width: 100%;
 }
 
-/* === BRAND LOGOS (overlay on the Card Number input row) ===
-   Hidden until JS adds `.is-ready` on the wrap after Frame.js emits 'ready'
-   so the brands don't appear before the iframe form has finished rendering. */
+/* Anchored from the bottom of the card wrap so additional fields above the
+   card (identity, billing) don't shift the overlay. Hidden until JS adds
+   `.is-ready` so the brands don't flash before the iframe is mounted. */
 .payment_method_frame .frame-card-brands {
   position: absolute;
-  top: var(--frame-brand-row-top);
+  bottom: var(--frame-brand-row-bottom);
   right: var(--frame-brand-row-right);
   display: flex;
   align-items: center;
@@ -145,38 +145,15 @@
        payment method) — so that switching to another gateway restores Woo's
        native fields. */
 
-body.frame-method-active.frame-wc-collecting-billing #billing_address_1_field,
-body.frame-method-active.frame-wc-collecting-billing #billing_address_2_field,
-body.frame-method-active.frame-wc-collecting-billing #billing_city_field,
-body.frame-method-active.frame-wc-collecting-billing #billing_state_field,
-body.frame-method-active.frame-wc-collecting-billing #billing_postcode_field,
-body.frame-method-active.frame-wc-collecting-billing #billing_country_field,
-body.frame-method-active.frame-wc-collecting-billing #billing_company_field {
-  display: none !important;
-}
-
 body.frame-method-active.frame-wc-collecting-firstName #billing_first_name_field { display: none !important; }
 body.frame-method-active.frame-wc-collecting-lastName  #billing_last_name_field  { display: none !important; }
 body.frame-method-active.frame-wc-collecting-email     #billing_email_field      { display: none !important; }
 body.frame-method-active.frame-wc-collecting-phone     #billing_phone_field      { display: none !important; }
 
-/* If billing + both name fields are hidden, hide the empty section heading too. */
-body.frame-method-active.frame-wc-collecting-billing.frame-wc-collecting-firstName.frame-wc-collecting-lastName .woocommerce-billing-fields > h3 {
-  display: none !important;
-}
-
 /* === RESPONSIVE === */
 @media (max-width: 600px) {
   .payment_method_frame .frame-wc-box {
     padding: 32px 20px;
-  }
-
-  /* On narrow screens drop the overlay into a normal row below the form
-     to avoid covering the input. */
-  .payment_method_frame .frame-card-brands {
-    position: static;
-    margin-top: 8px;
-    justify-content: flex-start;
   }
 
   .payment_method_frame #place_order {

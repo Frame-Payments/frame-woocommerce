@@ -101,19 +101,6 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                     'material' => __('Material', 'frame-payments-for-woocommerce'),
                 ],
             ],
-            'card_fields' => [
-                'title'       => __('Card fields to display', 'frame-payments-for-woocommerce'),
-                'type'        => 'multiselect',
-                'class'       => 'wc-enhanced-select',
-                'description' => __('Number, expiry, and CVC are always required and will be added back if omitted.', 'frame-payments-for-woocommerce'),
-                'default'     => ['name', 'number', 'expiry', 'cvc'],
-                'options'     => [
-                    'name'   => __('Cardholder name', 'frame-payments-for-woocommerce'),
-                    'number' => __('Card number', 'frame-payments-for-woocommerce'),
-                    'expiry' => __('Expiry', 'frame-payments-for-woocommerce'),
-                    'cvc'    => __('CVC', 'frame-payments-for-woocommerce'),
-                ],
-            ],
             'auto_focus' => [
                 'title'   => __('Auto-focus', 'frame-payments-for-woocommerce'),
                 'type'    => 'checkbox',
@@ -138,12 +125,6 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 'title'       => __('Collect customer details via Frame', 'frame-payments-for-woocommerce'),
                 'type'        => 'title',
                 'description' => __('When enabled, WooCommerce\'s native fields for these values are hidden at checkout and Frame\'s element collects them instead.', 'frame-payments-for-woocommerce'),
-            ],
-            'collect_billing' => [
-                'title'   => __('Billing address', 'frame-payments-for-woocommerce'),
-                'type'    => 'checkbox',
-                'label'   => __('Collect billing address via Frame (replaces WooCommerce billing address fields)', 'frame-payments-for-woocommerce'),
-                'default' => 'no',
             ],
             'identity_first_name' => [
                 'title'   => __('First name', 'frame-payments-for-woocommerce'),
@@ -357,17 +338,8 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 $payload = [];
             }
 
-            // New nested wire format: { card: {...}, billing_address, individual }.
-            // Back-compat: older builds posted a flat card object. Require the
-            // nested `card` array to be non-empty before treating the payload as
-            // already-nested — otherwise an edge-case `{"card":{}}` posting would
-            // bypass the back-compat path and produce a confusing validation error.
-            $cardData = (isset($payload['card']) && is_array($payload['card']) && ! empty($payload['card']))
-                ? $payload['card']
-                : $payload;
-
-            $frameBilling    = isset($payload['billing_address']) && is_array($payload['billing_address']) ? $payload['billing_address'] : null;
-            $frameIndividual = isset($payload['individual'])      && is_array($payload['individual'])      ? $payload['individual']      : null;
+            $cardData        = isset($payload['card'])       && is_array($payload['card'])       ? $payload['card']       : [];
+            $frameIndividual = isset($payload['individual']) && is_array($payload['individual']) ? $payload['individual'] : null;
 
             // Retrieve Sonar session ID from hidden input
             $sonar_session_id = filter_input( INPUT_POST, 'frame_sonar_session_id', FILTER_UNSAFE_RAW );
@@ -403,18 +375,8 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             $cardNumber = isset($cardData['number']) ? sanitize_text_field( $cardData['number'] ) : '';
             $cvc        = isset($cardData['cvc']) ? sanitize_text_field( $cardData['cvc'] ) : '';
 
-            $expMonth = '';
-            $expYear  = '';
-
-            // prefer nested if present
-            if (isset($cardData['expiry']) && is_array($cardData['expiry'])) {
-                $expMonth = (string) ($cardData['expiry']['month'] ?? '');
-                $expYear  = (string) ($cardData['expiry']['year']  ?? '');
-            }
-
-            // fallback to flat keys (your current payload)
-            if ($expMonth === '' && isset($cardData['exp_month'])) $expMonth = (string) $cardData['exp_month'];
-            if ($expYear  === '' && isset($cardData['exp_year']))  $expYear  = (string) $cardData['exp_year'];
+            $expMonth = isset($cardData['exp_month']) ? (string) $cardData['exp_month'] : '';
+            $expYear  = isset($cardData['exp_year'])  ? (string) $cardData['exp_year']  : '';
 
 
             if (
@@ -439,26 +401,14 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
                 return ['result' => 'failure'];
             }
 
-            // Build the billing Address — prefer Frame-collected values when the gateway collects billing.
-            if ($this->is_collecting_billing() && $frameBilling) {
-                $address = new Address(
-                    line1:      isset($frameBilling['line1'])      ? sanitize_text_field((string) $frameBilling['line1'])      : ($billing['address_1'] ?? null),
-                    line2:      isset($frameBilling['line2'])      ? sanitize_text_field((string) $frameBilling['line2'])      : ($billing['address_2'] ?? null),
-                    city:       isset($frameBilling['city'])       ? sanitize_text_field((string) $frameBilling['city'])       : ($billing['city'] ?? null),
-                    state:      isset($frameBilling['state'])      ? sanitize_text_field((string) $frameBilling['state'])      : ($billing['state'] ?? null),
-                    postalCode: isset($frameBilling['postalCode']) ? sanitize_text_field((string) $frameBilling['postalCode']) : ($billing['postcode'] ?? null),
-                    country:    isset($frameBilling['country'])    ? sanitize_text_field((string) $frameBilling['country'])    : ($billing['country'] ?? null),
-                );
-            } else {
-                $address = new Address(
-                    line1:      $billing['address_1'] ?? null,
-                    line2:      $billing['address_2'] ?? null,
-                    city:       $billing['city'] ?? null,
-                    state:      $billing['state'] ?? null,
-                    postalCode: $billing['postcode'] ?? null,
-                    country:    $billing['country'] ?? null,
-                );
-            }
+            $address = new Address(
+                line1:      $billing['address_1'] ?? null,
+                line2:      $billing['address_2'] ?? null,
+                city:       $billing['city'] ?? null,
+                state:      $billing['state'] ?? null,
+                postalCode: $billing['postcode'] ?? null,
+                country:    $billing['country'] ?? null,
+            );
 
             $shipping_data = $order->get_address('shipping');
             $shipping_address = null;
@@ -709,7 +659,6 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             'publicKey'         => (string) $this->public_key,
             'mountSelector'     => '#frame-card',
             'cardOptions'       => $this->build_card_options(),
-            'collectBilling'    => $this->is_collecting_billing(),
             'collectIdentity'   => $this->is_collecting_identity(),
             'identityShownFields' => $this->identity_shown_fields(),
         ];
@@ -750,17 +699,11 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
      */
     public function build_card_options(): array {
         $theme_preset = $this->get_option('card_theme', 'clean');
-        $fields       = $this->get_option('card_fields', ['name', 'number', 'expiry', 'cvc']);
-        if ( ! is_array($fields) ) {
-            $fields = ['name', 'number', 'expiry', 'cvc'];
-        }
-        // Number, expiry, and cvc are mandatory for tokenization — re-add if removed.
-        foreach (['number', 'expiry', 'cvc'] as $required) {
-            if ( ! in_array($required, $fields, true) ) {
-                $fields[] = $required;
-            }
-        }
-        $fields = array_values(array_intersect(['name', 'number', 'expiry', 'cvc'], $fields));
+
+        // The cardholder name is collected via the identity fields (First/Last
+        // name) rather than the in-iframe `name` field, so the card element
+        // only renders number/expiry/cvc.
+        $fields = ['number', 'expiry', 'cvc'];
 
         $card_theme = [
             'preset' => $theme_preset,
@@ -784,10 +727,6 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             'fields'    => $fields,
             'autoFocus' => $this->get_option('auto_focus') === 'yes',
         ];
-
-        if ( $this->is_collecting_billing() ) {
-            $options['billing'] = true;
-        }
 
         $identity_fields = [];
         foreach ($this->identity_field_map() as $option_key => $frame_key) {
@@ -835,10 +774,6 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
             }
         }
         return $shown;
-    }
-
-    public function is_collecting_billing(): bool {
-        return $this->get_option('collect_billing') === 'yes';
     }
 
     public function is_collecting_identity(): bool {
@@ -950,9 +885,6 @@ class Frame_WC_Gateway extends WC_Payment_Gateway {
         }
         if ('yes' !== $this->enabled) {
             return $classes;
-        }
-        if ($this->is_collecting_billing()) {
-            $classes[] = 'frame-wc-collecting-billing';
         }
         foreach ($this->identity_shown_fields() as $frame_key) {
             $classes[] = 'frame-wc-collecting-' . sanitize_html_class($frame_key);
