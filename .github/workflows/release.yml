@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags: ["*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish plugin zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          coverage: none
+          tools: composer:v2
+
+      - name: Check version strings
+        run: ./bin/check-version.sh
+
+      # Runtime deps only, resolved from composer.lock — the distributed zip
+      # must never depend on whatever happens to be committed under vendor/.
+      - name: Install runtime dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress
+
+      - name: Build zip
+        run: ./bin/build-zip.sh
+
+      - name: Verify the built zip
+        run: ./bin/verify-zip.sh dist/frame-payments-for-woocommerce.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frame-payments-for-woocommerce
+          path: dist/frame-payments-for-woocommerce.zip
+
+      - name: Attach zip to the GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
+            || gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" \
+            dist/frame-payments-for-woocommerce.zip --clobber

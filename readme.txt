@@ -4,7 +4,7 @@ Tags: payments, checkout, gateway, frame, fintech
 Requires at least: 6.3
 Tested up to: 6.8
 Requires PHP: 8.2
-Stable tag: 1.0.12
+Stable tag: 1.1.0
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -69,6 +69,16 @@ Yes — you can switch between test and live keys in the gateway settings.
 Visit [https://docs.framepayments.com/](https://docs.framepayments.com/) or email support@framepayments.com.
 
 == Changelog ==
+
+= 1.1.0 =
+* Add support for the new Frame.js card elements.
+* Send product line-item details in charge metadata.
+* Add a PHPUnit test suite and a GitHub Actions lint/test workflow.
+* Remove committed vendor files; dependencies are now installed from composer.lock at build time.
+
+= 1.0.13 =
+* Add shipping address support — shipping details are forwarded to Frame on charge creation.
+* Update the Frame PHP SDK.
 
 = 1.0.12 =
 * Add admin settings for Frame.js card-element theme, auto-focus, and input style overrides.
