@@ -70,6 +70,11 @@ Visit [https://docs.framepayments.com/](https://docs.framepayments.com/) or emai
 
 == Changelog ==
 
+= 1.1.1 =
+* Fix an incomplete vendor bundle in the distributed zip that could cause a fatal error at checkout (missing psr/http-message).
+* Correct the plugin version reported in the plugin header, which lagged the released version.
+* No functional changes to the plugin itself.
+
 = 1.1.0 =
 * Add support for the new Frame.js card elements.
 * Send product line-item details in charge metadata.
