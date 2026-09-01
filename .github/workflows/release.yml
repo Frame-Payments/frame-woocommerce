@@ -1,19 +1,44 @@
 name: Release
 
+# The version you type into the GitHub release is the single source of truth:
+# it gets stamped into the plugin header, FRAME_WC_VERSION, and readme.txt,
+# then committed back to main so nothing drifts.
 on:
-  push:
-    tags: ["*"]
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 1.2.0). Does not create a release."
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   release:
-    name: Build and publish plugin zip
+    name: Stamp version, build and publish zip
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve version
+        id: v
+        env:
+          RAW: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.version }}
+        run: |
+          version="${RAW#v}"
+          if ! printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'${RAW}' is not a semver version (expected e.g. 1.2.0 or v1.2.0)"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${version}"
+
+      # Check out main, not the tag: the stamp commit has to land on the branch.
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -22,8 +47,12 @@ jobs:
           coverage: none
           tools: composer:v2
 
-      - name: Check version strings
-        run: ./bin/check-version.sh
+      - name: Stamp version into source
+        run: ./bin/set-version.sh "${{ steps.v.outputs.version }}"
+
+      # Fails if the hand-written changelog has no entry for this version.
+      - name: Verify version and changelog
+        run: ./bin/check-version.sh "${{ steps.v.outputs.version }}"
 
       # Runtime deps only, resolved from composer.lock — the distributed zip
       # must never depend on whatever happens to be committed under vendor/.
@@ -36,17 +65,43 @@ jobs:
       - name: Verify the built zip
         run: ./bin/verify-zip.sh dist/frame-payments-for-woocommerce.zip
 
+      - name: Commit the stamped version back to main
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          if git diff --quiet -- frame-payments-for-woocommerce.php readme.txt; then
+            echo "Source already at ${VERSION}; nothing to commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frame-payments-for-woocommerce.php readme.txt
+          git commit -m "chore: set version to ${VERSION}"
+          # Rebase in case main moved while the build ran.
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      # Move the release tag onto the stamp commit, so the tag's tree is the
+      # code that actually shipped. Without this the tag points at the commit
+      # from before the stamp and still carries the old version strings.
+      - name: Point the release tag at the stamped commit
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          git tag -f "$TAG"
+          git push origin -f "refs/tags/$TAG"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: frame-payments-for-woocommerce
+          name: frame-payments-for-woocommerce-${{ steps.v.outputs.version }}
           path: dist/frame-payments-for-woocommerce.zip
 
-      - name: Attach zip to the GitHub release
-        if: github.ref_type == 'tag'
+      - name: Attach zip to the release
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
-            || gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes
-          gh release upload "${GITHUB_REF_NAME}" \
+          gh release upload "$TAG" \
             dist/frame-payments-for-woocommerce.zip --clobber
