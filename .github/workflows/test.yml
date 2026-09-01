@@ -26,6 +26,9 @@ jobs:
             | xargs -0 -n1 -P4 php -l > /tmp/lint.out 2>&1 \
             || (cat /tmp/lint.out && exit 1)
 
+      - name: Check version strings are in sync
+        run: ./bin/check-version.sh
+
   test:
     name: PHPUnit (PHP ${{ matrix.php }})
     runs-on: ubuntu-latest

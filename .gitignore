@@ -1,6 +1,10 @@
 # Dependencies — reproducible from composer.lock
 /vendor/
 
+# Release build output
+/dist/
+/build/
+
 # PHPUnit
 /.phpunit.cache/
 /.phpunit.result.cache
